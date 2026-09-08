@@ -49,7 +49,7 @@ function primarySocketUrl(
   if (url.pathname === "" || url.pathname === "/") {
     url.pathname = "/ws";
   }
-  appendClientConnectionParams(url, clientMetadata, "direct");
+  appendClientConnectionParams(url, clientMetadata);
   return url.toString();
 }
 
