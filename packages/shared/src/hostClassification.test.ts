@@ -35,7 +35,7 @@ describe("isPublicFaviconHost", () => {
     }
   });
 
-  it("detects the Tailscale 100.64.0.0/10 range", () => {
+  it("detects the CGNAT 100.64.0.0/10 range", () => {
     for (const host of ["100.64.0.1", "100.100.100.100", "100.126.17.15", "100.127.255.255"]) {
       expect(isPublicFaviconHost(host), host).toBe(false);
     }

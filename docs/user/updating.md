@@ -44,7 +44,7 @@ and rollback.
 
 For a foreground server, the copied command is `npx t3@<client-version>`. Add
 `serve` if you normally run without a browser, and preserve options such as
-`--host` or `--tailscale-serve`. See
+`--host`. See
 [background services](./background-service.md) for service management.
 
 ## If an update fails
