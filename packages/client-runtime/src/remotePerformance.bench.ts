@@ -96,7 +96,6 @@ const requests: Record<
       target,
     },
     threadId: thread.id,
-    signer: Option.none(),
   }),
 };
 

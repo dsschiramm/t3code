@@ -7,12 +7,6 @@ interface OnboardingEnvironment {
   readonly entry: { readonly target: ConnectionTarget };
 }
 
-export function isOnboardingRelayEnvironment(
-  environment: Pick<OnboardingEnvironment, "entry">,
-): boolean {
-  return environment.entry.target._tag === "RelayConnectionTarget";
-}
-
 /** Keep a directly paired machine pinned while its initial connection completes. */
 export function resolveOnboardingTargetEnvironment<TEnvironment extends OnboardingEnvironment>({
   mode,
@@ -32,18 +26,9 @@ export function resolveOnboardingTargetEnvironment<TEnvironment extends Onboardi
     return pairedEnvironment?.connection.phase === "connected" ? pairedEnvironment : null;
   }
 
-  const connectedRelayEnvironments = environments.filter(
-    (environment) =>
-      environment.connection.phase === "connected" && isOnboardingRelayEnvironment(environment),
-  );
-
-  if (mode === "connect" && connectedRelayEnvironments.length > 0) {
-    return connectedRelayEnvironments[connectedRelayEnvironments.length - 1] ?? null;
-  }
-
   if (primaryEnvironment?.connection.phase === "connected") {
     return primaryEnvironment;
   }
 
-  return mode === "local" ? null : (connectedRelayEnvironments[0] ?? null);
+  return null;
 }

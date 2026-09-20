@@ -21,9 +21,11 @@ Registro dos commits do autor `daniel` que divergem da `main`. Consultar ao faze
   - Contracts: `relay.ts`, `relayClient.ts`, export `@t3tools/contracts/relay`, grupo HTTP `connect`, RPCs `cloud.getRelayClientStatus` e `cloud.installRelayClient`, capability `agentActivityPublishing`, campo `relayManaged`.
   - Mantidos de propósito: `bootService`, `pinnedRuntime`, `selfUpdate`, `serviceLauncherClient`, `servicePreflight`, `serviceProtocol` (usados por `t3 service`, `update`, `uninstall`), scopes `relay:read` e `relay:write`, `shared/relaySigning` (usado pelo `GrokAdapter`).
 
-## Pendências da remoção do T3 Connect
+## Remoção do T3 Connect (concluída, sem commit ainda)
 
-Ainda referenciam o código removido e não compilam: `infra/relay`, `packages/shared` (relay*, connectAuth, agentAwareness), `packages/client-runtime` (relay/, driver relay), `apps/web` (cloud/, components/clerk, components/cloud, routes/connect, state/relay), `apps/desktop` (DesktopClerk), `apps/mobile` (features/cloud, agent-awareness, state/relay). Também `pnpm-workspace.yaml`, `knip.jsonc`, `t3.json`, `.env.example`, `scripts/lib/reference-repos.ts`, `scripts/release-smoke.ts` e dependências Clerk nos `package.json`.
+- Removidos: `infra/relay`, `packages/shared` (relay*, connectAuth, agentAwareness, relayTracing), `client-runtime` (relay/, alvo Relay, DPoP), web (`cloud/`, `components/clerk`, `components/cloud`, rota `/connect`), desktop (`DesktopClerk`, trocado por `DesktopSingleInstance`), mobile (`features/cloud`, `features/agent-awareness`, telas de conta e notificações), dependências Clerk e `jose`.
+- Mantido: `shared/relaySigning` (usado pelo `GrokAdapter`), scopes `relay:read` e `relay:write`, subsistema de assinatura de passkey do macOS em `scripts/build-desktop-artifact.ts` (só ativa com `T3CODE_APPLE_TEAM_ID`), docs.
+- Ao fazer merge da main: manter esses itens removidos.
 
 ## Regras de merge
 

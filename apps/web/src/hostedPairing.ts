@@ -1,5 +1,3 @@
-import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
-
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "./pairingUrl";
 
 export interface HostedPairingRequest {
@@ -7,6 +5,8 @@ export interface HostedPairingRequest {
   readonly token: string;
   readonly label: string;
 }
+
+const DEFAULT_HOSTED_APP_URL = "https://app.t3.codes";
 
 export type HostedAppChannel = "latest" | "nightly";
 

@@ -1,16 +1,12 @@
 import {
   BearerConnectionTarget,
   PrimaryConnectionTarget,
-  RelayConnectionTarget,
   SshConnectionTarget,
 } from "@t3tools/client-runtime/connection";
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  isOnboardingRelayEnvironment,
-  resolveOnboardingTargetEnvironment,
-} from "./targetEnvironment.logic";
+import { resolveOnboardingTargetEnvironment } from "./targetEnvironment.logic";
 
 const primaryEnvironment = {
   environmentId: EnvironmentId.make("primary"),
@@ -24,30 +20,6 @@ const primaryEnvironment = {
     }),
   },
   label: "This computer",
-} as const;
-
-const olderRelay = {
-  environmentId: EnvironmentId.make("older-remote"),
-  connection: { phase: "connected" },
-  entry: {
-    target: new RelayConnectionTarget({
-      environmentId: EnvironmentId.make("older-remote"),
-      label: "Older computer",
-    }),
-  },
-  label: "Older computer",
-} as const;
-
-const newerRelay = {
-  environmentId: EnvironmentId.make("newer-relay"),
-  connection: { phase: "connected" },
-  entry: {
-    target: new RelayConnectionTarget({
-      environmentId: EnvironmentId.make("newer-relay"),
-      label: "New computer",
-    }),
-  },
-  label: "New computer",
 } as const;
 
 const pairedRemote = {
@@ -96,7 +68,7 @@ describe("resolveOnboardingTargetEnvironment", () => {
     expect(
       resolveOnboardingTargetEnvironment({
         mode: "direct",
-        environments: [primaryEnvironment, olderRelay, pendingPairedRemote],
+        environments: [primaryEnvironment, sshEnvironment, pendingPairedRemote],
         primaryEnvironment,
         pairedEnvironmentId: pairedRemote.environmentId,
       }),
@@ -107,7 +79,7 @@ describe("resolveOnboardingTargetEnvironment", () => {
     expect(
       resolveOnboardingTargetEnvironment({
         mode: "direct",
-        environments: [primaryEnvironment, olderRelay, pairedRemote],
+        environments: [primaryEnvironment, sshEnvironment, pairedRemote],
         primaryEnvironment,
         pairedEnvironmentId: pairedRemote.environmentId,
       }),
@@ -118,7 +90,7 @@ describe("resolveOnboardingTargetEnvironment", () => {
     expect(
       resolveOnboardingTargetEnvironment({
         mode: "direct",
-        environments: [primaryEnvironment, olderRelay],
+        environments: [primaryEnvironment, sshEnvironment],
         primaryEnvironment,
         pairedEnvironmentId: pairedRemote.environmentId,
       }),
@@ -129,7 +101,7 @@ describe("resolveOnboardingTargetEnvironment", () => {
     expect(
       resolveOnboardingTargetEnvironment({
         mode: "local",
-        environments: [primaryEnvironment, olderRelay],
+        environments: [primaryEnvironment, sshEnvironment],
         primaryEnvironment,
         pairedEnvironmentId: null,
       }),
@@ -142,42 +114,14 @@ describe("resolveOnboardingTargetEnvironment", () => {
     expect(
       resolveOnboardingTargetEnvironment({
         mode: "local",
-        environments: [offlinePrimary, olderRelay],
+        environments: [offlinePrimary, sshEnvironment],
         primaryEnvironment: offlinePrimary,
         pairedEnvironmentId: null,
       }),
     ).toBeNull();
   });
 
-  it("uses the newest connected remote when no exact machine was selected", () => {
-    expect(
-      resolveOnboardingTargetEnvironment({
-        mode: "connect",
-        environments: [primaryEnvironment, olderRelay, newerRelay],
-        primaryEnvironment,
-        pairedEnvironmentId: null,
-      }),
-    ).toBe(newerRelay);
-  });
-
-  it("ignores direct, SSH, and desktop-managed connections in Connect mode", () => {
-    expect(
-      resolveOnboardingTargetEnvironment({
-        mode: "connect",
-        environments: [
-          primaryEnvironment,
-          olderRelay,
-          pairedRemote,
-          sshEnvironment,
-          desktopLocalEnvironment,
-        ],
-        primaryEnvironment,
-        pairedEnvironmentId: null,
-      }),
-    ).toBe(olderRelay);
-  });
-
-  it("uses the primary computer when no relay connection exists", () => {
+  it("uses the primary computer when only direct, SSH, and desktop-managed connections exist", () => {
     expect(
       resolveOnboardingTargetEnvironment({
         mode: "connect",
@@ -197,15 +141,5 @@ describe("resolveOnboardingTargetEnvironment", () => {
         pairedEnvironmentId: null,
       }),
     ).toBe(primaryEnvironment);
-  });
-});
-
-describe("isOnboardingRelayEnvironment", () => {
-  it("includes only T3 Connect relay targets", () => {
-    expect(
-      [olderRelay, pairedRemote, sshEnvironment, desktopLocalEnvironment].filter(
-        isOnboardingRelayEnvironment,
-      ),
-    ).toEqual([olderRelay]);
   });
 });
