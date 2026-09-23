@@ -473,8 +473,8 @@ function PairingForm({
               {isPairing ? "Pairing..." : "Pair"}
             </Button>
           </div>
-          <CollapsiblePanel className="pt-3">
-            <p className="text-sm text-muted-foreground">
+          <CollapsiblePanel>
+            <p className="pt-3 text-sm text-muted-foreground">
               Run this on the computer with your code.
             </p>
             <CommandBlock command="npx t3 pair" className="mt-2" />
@@ -520,10 +520,7 @@ function AgentsStep({
   const { environments } = useEnvironments();
   return (
     <StepShell title="Your agents" description="Agents available on your selected computers.">
-      <ScrollArea
-        scrollFade
-        className="mt-5 h-auto max-h-96 [&_[data-slot=scroll-area-scrollbar]]:opacity-100"
-      >
+      <ScrollArea scrollFade className="mt-5 h-auto max-h-96">
         <div className="space-y-5 pr-3">
           {environmentIds.map((environmentId) => (
             <ConnectedAgentsStep
@@ -1046,7 +1043,7 @@ function ImportStep({
       <div className="flex h-full min-h-40 flex-col">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Your projects</h1>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 py-6">
-          <Spinner className="size-5 text-muted-foreground" />
+          <Spinner size="lg" tone="muted" />
           <p className="text-center text-sm text-muted-foreground">
             Looking for projects from Claude Code and Codex…
           </p>
@@ -1090,10 +1087,7 @@ function ImportStep({
           </div>
         </div>
       ) : null}
-      <ScrollArea
-        scrollFade
-        className="mt-2 h-auto max-h-80 [&_[data-slot=scroll-area-scrollbar]]:opacity-100"
-      >
+      <ScrollArea scrollFade className="mt-2 h-auto max-h-80">
         <div className="space-y-5 pr-3">
           {scans.map((scan) => {
             const scanCandidates = candidates.filter(
@@ -1113,7 +1107,7 @@ function ImportStep({
                 ) : null}
                 {scan.isPending && scan.data === null ? (
                   <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
-                    <Spinner className="size-4" />
+                    <Spinner size="md" />
                     Looking for projects…
                   </div>
                 ) : scan.error !== null ? (
@@ -1343,7 +1337,7 @@ function ImportCandidateRow({
             </span>
           ) : null}
         </TooltipTrigger>
-        <TooltipPopup className="max-w-96 break-all font-mono">{candidate.path}</TooltipPopup>
+        <TooltipPopup variant="code">{candidate.path}</TooltipPopup>
       </Tooltip>
       <ImportRowMeta
         sources={nested ? null : candidate.sources}

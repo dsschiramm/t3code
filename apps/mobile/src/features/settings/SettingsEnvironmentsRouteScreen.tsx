@@ -1,7 +1,7 @@
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { useNavigation } from "@react-navigation/native";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -29,11 +29,17 @@ export function SettingsEnvironmentsRouteScreen() {
   const localEnvironments = SHOWCASE_ENABLED
     ? applyShowcaseLocalEnvironmentDisplayUrls(connectedEnvironments)
     : connectedEnvironments;
-  const [expandedId, setExpandedId] = useState<EnvironmentId | null>(null);
   const headerIconColor = useUniwindTheme()["--color-icon"];
-  const handleToggle = useCallback((environmentId: EnvironmentId) => {
-    setExpandedId((prev) => (prev === environmentId ? null : environmentId));
-  }, []);
+
+  const openEnvironment = useCallback(
+    (environmentId: EnvironmentId) => {
+      navigation.navigate("SettingsSheet", {
+        screen: "SettingsContent",
+        params: { screen: "SettingsEnvironmentDetail", params: { environmentId } },
+      });
+    },
+    [navigation],
+  );
   const handleUpdateEnvironment = useCallback(
     (
       environmentId: EnvironmentId,
@@ -89,8 +95,9 @@ export function SettingsEnvironmentsRouteScreen() {
       >
         <LocalEnvironmentList
           environments={localEnvironments}
-          expandedId={expandedId}
-          onToggle={handleToggle}
+          expandedId={null}
+          onToggle={openEnvironment}
+          opensDetails
           onReconnect={onReconnectEnvironment}
           onRemove={onRemoveEnvironmentPress}
           onSetEnabled={onSetEnvironmentEnabled}

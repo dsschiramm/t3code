@@ -76,6 +76,12 @@ export function ShowcaseCaptureCoordinator(props: { readonly pathname: string })
   const [readyScene, setReadyScene] = useState<ShowcaseScene | null>(null);
   const [orientationSettled, setOrientationSettled] = useState(false);
   const requestedSceneRef = useRef<ShowcaseScene | null>(null);
+  // Staging reads the latest entities without restarting on every shell
+  // update, which would re-enter a permission prompt that is still open.
+  const entitiesRef = useRef({ threads, projects });
+  useEffect(() => {
+    entitiesRef.current = { threads, projects };
+  }, [projects, threads]);
   const renderSignal = useSyncExternalStore(
     subscribeToShowcaseRenderSignal,
     getShowcaseRenderSignal,
@@ -109,6 +115,7 @@ export function ShowcaseCaptureCoordinator(props: { readonly pathname: string })
     }
 
     let cancelled = false;
+    let lastOutcome: string | null = null;
     void retryShowcaseOperation(async () => applyNativeShowcaseOrientation(orientation), {
       isCancelled: () => cancelled,
     }).then((applied) => {

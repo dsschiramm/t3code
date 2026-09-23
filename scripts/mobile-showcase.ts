@@ -26,6 +26,7 @@ import showcaseConfig, {
 import {
   SHOWCASE_ENVIRONMENTS,
   SHOWCASE_PROJECTS,
+  SHOWCASE_THREADS,
   seedShowcaseEnvironment,
 } from "./mobile-showcase-environment.ts";
 
@@ -1021,6 +1022,8 @@ async function captureIos(
   for (const [sceneIndex, scene] of capture.scenes.entries()) {
     if (sceneIndex > 0) await NodeFSP.rm(readyPath, { force: true });
     await NodeFSP.writeFile(scenePath, scene);
+    const waitForScene = (timeoutMs?: number) =>
+      waitForIosShowcaseScene(simulator.udid, scene, timeoutMs);
     if (sceneIndex === 0) {
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const isLastAttempt = attempt === 1;
@@ -1028,7 +1031,7 @@ async function captureIos(
           // A freshly installed Expo development build can spend well over 30s
           // applying an already-bundled update after it reaches 100%. Killing it
           // at that point sends the next capture back to the dev launcher.
-          await waitForIosShowcaseScene(simulator.udid, scene, 120_000);
+          await waitForScene(120_000);
           break;
         } catch (error) {
           if (isLastAttempt) throw error;
@@ -1036,7 +1039,7 @@ async function captureIos(
         }
       }
     } else {
-      await waitForIosShowcaseScene(simulator.udid, scene);
+      await waitForScene();
     }
     await delay(scene === "review" ? Math.max(config.settleDelayMs, 8_000) : config.settleDelayMs);
     const destination = NodePath.join(

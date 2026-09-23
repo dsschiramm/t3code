@@ -143,6 +143,8 @@ const config: ShowcaseConfig = {
       appearance: "dark",
       theme: DEFAULT_SHOWCASE_THEME,
       orientation: "landscape",
+      // The lock screen does not follow the app's self-rotation, so a
+      // headless landscape capture of it would come out sideways.
       scenes: ["thread", "terminal", "review", "threads", "environments"],
       storeAsset: {
         store: "apple",
