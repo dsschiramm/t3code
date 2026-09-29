@@ -44,3 +44,4 @@ Ao fazer merge da main: manter esses itens removidos.
 
 - 2026-09-20: merge de `main` (7445aa733) na `dev`.
 - 2026-09-23: merge de `main` (68fb7f4b8) na `dev`.
+- 2026-09-29: merge de main (94f92a7a3) na dev. Removidos também: cloud/managedTunnelStartup (novo na main), prefixos cloud em uth/replayMarkers.ts, testes de cloud link em server.test.ts, teste de analytics em ProviderService.test.ts.

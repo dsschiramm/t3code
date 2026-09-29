@@ -152,6 +152,7 @@ describe("searchSettings", () => {
     const available = filterAvailableSettingsSearchItems({
       hasEnvironment: false,
       hasProviderSettingsEnvironment: false,
+      hasMacProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
@@ -162,6 +163,7 @@ describe("searchSettings", () => {
       "git-fetch-interval",
       "network-access",
       "provider-health-check-interval",
+      "cursor-keychain-usage",
       "source-control-writer-model",
       "source-control-writing-style",
       "wsl-backend",
@@ -172,10 +174,30 @@ describe("searchSettings", () => {
     expect(available.map((item) => item.id).filter((id) => gatedIds.has(id))).toEqual([]);
   });
 
+  it("offers Cursor Keychain settings only when a macOS provider environment is available", () => {
+    const availability = {
+      hasCloudPublicConfig: false,
+      hasEnvironment: true,
+      hasProviderSettingsEnvironment: true,
+      hasMacProviderSettingsEnvironment: false,
+      canManageLocalBackend: false,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+    };
+    const itemIds = (macAvailable: boolean) =>
+      filterAvailableSettingsSearchItems({
+        ...availability,
+        hasMacProviderSettingsEnvironment: macAvailable,
+      }).map((item) => item.id);
+    expect(itemIds(false)).not.toContain("cursor-keychain-usage");
+    expect(itemIds(true)).toContain("cursor-keychain-usage");
+  });
+
   it("keeps the local toggle searchable without offering hidden host publishing controls", () => {
     const availability = {
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
+      hasMacProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
@@ -192,6 +214,7 @@ describe("searchSettings", () => {
     const available = filterAvailableSettingsSearchItems({
       hasEnvironment: false,
       hasProviderSettingsEnvironment: false,
+      hasMacProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: true,
@@ -317,6 +340,7 @@ describe("searchSettings", () => {
     const available = filterAvailableSettingsSearchItems({
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
+      hasMacProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: true,
@@ -410,6 +434,7 @@ describe("auto-settlement search availability", () => {
     const items = filterAvailableSettingsSearchItems({
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
+      hasMacProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: availability.eligibleEnvironmentIds.length > 0,
