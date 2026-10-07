@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
@@ -43,6 +44,7 @@ const makeLayer = (options: { readonly hasLock: boolean; readonly events: string
         Layer.succeed(DesktopEnvironment.DesktopEnvironment, environment),
         Layer.succeed(ElectronApp.ElectronApp, electronApp),
         FileSystem.layerNoop({ exists: () => Effect.succeed(false) }),
+        Path.layer,
       ),
     ),
   );

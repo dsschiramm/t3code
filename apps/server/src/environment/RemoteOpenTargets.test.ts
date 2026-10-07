@@ -7,7 +7,7 @@ import { describe, expect } from "vite-plus/test";
 
 import * as RemoteOpenTargets from "./RemoteOpenTargets.ts";
 
-const netLayer = (input: { readonly ipv4: boolean; readonly ipv6: boolean }) =>
+const layerNet = (input: { readonly ipv4: boolean; readonly ipv6: boolean }) =>
   Layer.succeed(NetService.NetService, {
     canListenOnHost: () => Effect.succeed(true),
     isPortAvailableOnLoopback: () => Effect.succeed(true),
@@ -22,7 +22,7 @@ const resolveTargets = (input: {
 }) =>
   Effect.flatMap(RemoteOpenTargets.RemoteOpenTargets, (service) => service.resolveTargets()).pipe(
     Effect.provideService(HostProcessHostname, input.hostname),
-    Effect.provide(RemoteOpenTargets.layer.pipe(Layer.provide(netLayer(input.sshd)))),
+    Effect.provide(RemoteOpenTargets.layer.pipe(Layer.provide(layerNet(input.sshd)))),
   );
 
 describe("RemoteOpenTargets", () => {

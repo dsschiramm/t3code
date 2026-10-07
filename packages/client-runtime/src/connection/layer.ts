@@ -11,13 +11,18 @@ import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as RpcSession from "../rpc/session.ts";
 
 export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
-  const driverLayer = ConnectionDriver.layer.pipe(
-    Layer.provide(Layer.mergeAll(ConnectionResolver.layer, RpcSession.layerWithOptions(options))),
+  const layerDriver = ConnectionDriver.layer.pipe(
+    Layer.provide(Layer.mergeAll(ConnectionResolver.layer, RpcSession.layer(options))),
   );
-  const registryLayer = EnvironmentRegistry.layer.pipe(Layer.provide(driverLayer));
-  const onboardingLayer = ConnectionOnboarding.layer.pipe(Layer.provide(registryLayer));
-  const connectionServicesLayer = Layer.mergeAll(registryLayer, onboardingLayer);
-  const connectionStartupLayer = Layer.effectDiscard(
+  const layerRegistry = EnvironmentRegistry.layer.pipe(Layer.provide(layerDriver));
+  const layerOnboarding = ConnectionOnboarding.layer.pipe(Layer.provide(layerRegistry));
+  const layerConnectionServices = Layer.mergeAll(
+    layerRegistry,
+    layerOnboarding,
+    // Exposed for updating hosts too old to connect through the driver.
+    ConnectionResolver.layer,
+  );
+  const layerConnectionStartup = Layer.effectDiscard(
     Effect.gen(function* () {
       const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
       const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
@@ -28,8 +33,8 @@ export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
       );
     }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
   );
-  return connectionStartupLayer.pipe(
-    Layer.provideMerge(connectionServicesLayer),
+  return layerConnectionStartup.pipe(
+    Layer.provideMerge(layerConnectionServices),
     Layer.provideMerge(RemoteEnvironmentAuthorization.layer),
   );
 }

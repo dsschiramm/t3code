@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/http";
 
 import type { PreparedConnection } from "../connection/model.ts";
 import {
@@ -75,11 +75,7 @@ export class PullRequestDiffLoader extends Context.Service<
   }
 >()("@t3tools/client-runtime/state/pullRequestDiffHttp/PullRequestDiffLoader") {}
 
-export const pullRequestDiffLoaderLayer: Layer.Layer<
-  PullRequestDiffLoader,
-  never,
-  HttpClient.HttpClient
-> = Layer.effect(
+export const layer: Layer.Layer<PullRequestDiffLoader, never, HttpClient.HttpClient> = Layer.effect(
   PullRequestDiffLoader,
   Effect.gen(function* () {
     const httpClient = yield* HttpClient.HttpClient;

@@ -1,5 +1,9 @@
 import * as Effect from "effect/Effect";
-import { FetchHttpClient, type HttpMethod } from "effect/unstable/http";
+import {
+  ORCHESTRATION_PROTOCOL_HEADER,
+  ORCHESTRATION_PROTOCOL_VERSION_TEXT,
+} from "@t3tools/contracts";
+import { FetchHttpClient, type HttpMethod } from "effect/http";
 
 import type { PreparedConnection, PreparedHttpAuthorization } from "../connection/model.ts";
 import {
@@ -11,7 +15,17 @@ import {
 
 export interface EnvironmentHttpAuthHeaders {
   readonly authorization?: string;
-  readonly dpop?: string;
+}
+
+export function withOrchestrationProtocolHeader(
+  headers: EnvironmentHttpAuthHeaders,
+): EnvironmentHttpAuthHeaders & {
+  readonly [ORCHESTRATION_PROTOCOL_HEADER]: typeof ORCHESTRATION_PROTOCOL_VERSION_TEXT;
+} {
+  return {
+    ...headers,
+    [ORCHESTRATION_PROTOCOL_HEADER]: ORCHESTRATION_PROTOCOL_VERSION_TEXT,
+  };
 }
 
 /**

@@ -15,6 +15,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
@@ -369,6 +370,10 @@ export const make = Effect.gen(function* () {
   const networkInterfaces = yield* DesktopNetworkInterfaces.DesktopNetworkInterfaces;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const stateRef = yield* Ref.make(initialRuntimeState());
+  // Each change reads the runtime state, persists settings, then writes the
+  // state back. Run them one at a time so a change never writes over another
+  // with values it read before that change persisted.
+  const changePermit = yield* Semaphore.make(1);
 
   const readNetworkInterfaces = networkInterfaces.read;
 
@@ -423,7 +428,7 @@ export const make = Effect.gen(function* () {
       state: toContractState(resolved.state),
       requiresRelaunch: change.changed || requiresBackendRelaunch(previous, resolved.state),
     };
-  });
+  }, changePermit.withPermit);
 
   const getAdvertisedEndpoints = Effect.gen(function* () {
     const state = yield* Ref.get(stateRef);

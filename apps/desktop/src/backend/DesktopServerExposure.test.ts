@@ -1,7 +1,9 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 
@@ -22,7 +24,7 @@ const lanNetworkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces = {
   ],
 };
 
-function makeEnvironmentLayer(baseDir: string, env: Record<string, string | undefined> = {}) {
+function layerEnvironmentFor(baseDir: string, env: Record<string, string | undefined> = {}) {
   return DesktopEnvironment.layer({
     dirname: "/repo/apps/desktop/src",
     homeDirectory: baseDir,
@@ -40,24 +42,24 @@ function makeEnvironmentLayer(baseDir: string, env: Record<string, string | unde
   );
 }
 
-function makeLayer(input: {
+function layer(input: {
   readonly baseDir: string;
   readonly networkInterfaces?: DesktopNetworkInterfaces.NetworkInterfaces;
   readonly env?: Record<string, string | undefined>;
   readonly desktopSettingsLayer?: Layer.Layer<DesktopAppSettings.DesktopAppSettings>;
 }) {
   const env = { T3CODE_HOME: input.baseDir, ...input.env };
-  const environmentLayer = makeEnvironmentLayer(input.baseDir, env);
-  const networkLayer = Layer.succeed(DesktopNetworkInterfaces.DesktopNetworkInterfaces, {
+  const layerEnvironment = layerEnvironmentFor(input.baseDir, env);
+  const layerNetwork = Layer.succeed(DesktopNetworkInterfaces.DesktopNetworkInterfaces, {
     read: Effect.succeed(input.networkInterfaces ?? emptyNetworkInterfaces),
   });
 
   return DesktopServerExposure.layer.pipe(
     Layer.provideMerge(input.desktopSettingsLayer ?? DesktopAppSettings.layer),
     Layer.provideMerge(NodeFileSystem.layer),
-    Layer.provideMerge(networkLayer),
+    Layer.provideMerge(layerNetwork),
     Layer.provideMerge(DesktopConfig.layerTest(env)),
-    Layer.provideMerge(environmentLayer),
+    Layer.provideMerge(layerEnvironment),
   );
 }
 
@@ -82,7 +84,7 @@ const withHarness = <A, E, R>(
     });
     return yield* effect.pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           baseDir,
           networkInterfaces,
           env,
@@ -163,7 +165,7 @@ describe("DesktopServerExposure", () => {
       path: "/tmp/desktop-settings.json",
       cause: diskFailure,
     });
-    const settingsLayer = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
+    const layerSettings = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
       get: Effect.succeed(DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS),
       load: Effect.succeed(DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS),
       setMainWindowBounds: () => Effect.die("unexpected main window bounds update"),
@@ -198,7 +200,7 @@ describe("DesktopServerExposure", () => {
         assert.notInclude(modeError.message, diskFailure.message);
       }),
       {},
-      settingsLayer,
+      layerSettings,
     );
   });
 

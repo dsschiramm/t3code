@@ -6,7 +6,8 @@ import * as Scope from "effect/Scope";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
+import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import * as DesktopUserData from "./DesktopUserData.ts";
 
 export class DesktopSingleInstance extends Context.Service<
   DesktopSingleInstance,
@@ -21,6 +22,7 @@ export class DesktopSingleInstance extends Context.Service<
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
+  const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const electronApp = yield* ElectronApp.ElectronApp;
 
   // Electron scopes the single-instance lock to the userData directory and
@@ -28,7 +30,7 @@ export const make = Effect.gen(function* () {
   // point at the real directory here. Under the default productName-derived
   // path, acquiring the lock would create "T3 Code (Alpha)" and make the
   // legacy-install detection in resolveUserDataPath match on fresh installs.
-  const userDataPath = yield* DesktopAppIdentity.resolveUserDataPath;
+  const userDataPath = yield* DesktopUserData.resolveUserDataPath(environment);
   yield* electronApp.setPath("userData", userDataPath);
   const isPrimaryInstance = yield* electronApp.requestSingleInstanceLock;
 

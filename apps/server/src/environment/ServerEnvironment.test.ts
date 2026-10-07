@@ -10,9 +10,14 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
+import {
+  HostProcessArguments,
+  HostProcessEnvironment,
+  HostProcessIsExecutable,
+  HostProcessPlatform,
+} from "@t3tools/shared/hostProcess";
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 
-import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
 
@@ -20,22 +25,8 @@ const isServerEnvironmentIdPersistenceError = Schema.is(
   ServerEnvironment.ServerEnvironmentIdPersistenceError,
 );
 
-const makeServerEnvironmentLayer = (baseDir: string) =>
-  ServerEnvironment.layer.pipe(
-    Layer.provide(ServerSecretStore.layer),
-    Layer.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
-  );
-
-const emptySecretStoreLayer = Layer.succeed(
-  ServerSecretStore.ServerSecretStore,
-  ServerSecretStore.ServerSecretStore.of({
-    get: () => Effect.succeedNone,
-    set: () => Effect.void,
-    create: () => Effect.void,
-    getOrCreateRandom: () => Effect.succeed(new Uint8Array()),
-    remove: () => Effect.void,
-  }),
-);
+const layerServerEnvironment = (baseDir: string) =>
+  ServerEnvironment.layer.pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), baseDir)));
 
 const makeServerConfig = Effect.fn(function* (baseDir: string) {
   const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, undefined);
@@ -72,6 +63,44 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
 });
 
 it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
+  it.effect("publishes proven install ownership only for manually updated servers", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const prefix = `${baseDir}/node`;
+      const entry = `${prefix}/lib/node_modules/t3/dist/bin.mjs`;
+      yield* fs.makeDirectory(`${prefix}/lib/node_modules/t3/dist`, { recursive: true });
+      yield* fs.makeDirectory(`${prefix}/bin`, { recursive: true });
+      yield* fs.writeFileString(entry, "");
+      yield* fs.writeFileString(
+        `${prefix}/lib/node_modules/t3/package.json`,
+        '{"name":"t3","version":"0.0.45","bin":{"t3":"./dist/bin.mjs"}}',
+      );
+      yield* fs.symlink(entry, `${prefix}/bin/t3`);
+      const config = yield* makeServerConfig(baseDir);
+      yield* fs.makeDirectory(config.stateDir, { recursive: true });
+      for (const mode of ["web", "desktop"] as const) {
+        const descriptor = yield* Effect.gen(function* () {
+          const environment = yield* ServerEnvironment.ServerEnvironment;
+          return yield* environment.getDescriptor;
+        }).pipe(
+          Effect.provide(
+            ServerEnvironment.layer.pipe(Layer.provide(ServerConfig.layer({ ...config, mode }))),
+          ),
+          Effect.provideService(HostProcessArguments, ["node", entry]),
+          Effect.provideService(HostProcessIsExecutable, false),
+          Effect.provideService(HostProcessPlatform, "linux"),
+          Effect.provideService(HostProcessEnvironment, {}),
+        );
+        expect(descriptor.capabilities.serverInstallation).toEqual(
+          mode === "web" ? { kind: "npm-global", prefix } : undefined,
+        );
+        expect(descriptor.capabilities.serverSelfUpdate).toBe(
+          mode === "web" ? undefined : "desktop-managed",
+        );
+      }
+    }),
+  );
   it.effect.each([
     { name: "missing", content: undefined },
     { name: "empty", content: "" },
@@ -98,7 +127,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         return yield* identity.getEnvironmentId;
       }).pipe(
         Effect.tap(() => Deferred.succeed(firstInitialized, undefined)),
-        Effect.provide(Layer.fresh(ServerEnvironment.identityLayer)),
+        Effect.provide(Layer.fresh(ServerEnvironment.layerIdentity)),
         Effect.provideService(ServerConfig.ServerConfig, serverConfig),
         Effect.provideService(FileSystem.FileSystem, {
           ...fileSystem,
@@ -153,11 +182,11 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       const first = yield* Effect.gen(function* () {
         const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
         return yield* serverEnvironment.getDescriptor;
-      }).pipe(Effect.provide(makeServerEnvironmentLayer(baseDir)));
+      }).pipe(Effect.provide(layerServerEnvironment(baseDir)));
       const second = yield* Effect.gen(function* () {
         const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
         return yield* serverEnvironment.getDescriptor;
-      }).pipe(Effect.provide(makeServerEnvironmentLayer(baseDir)));
+      }).pipe(Effect.provide(layerServerEnvironment(baseDir)));
 
       expect(first.environmentId).toBe(second.environmentId);
       expect(first.orchestrationProtocolVersion).toBe(ORCHESTRATION_PROTOCOL_VERSION);
@@ -172,6 +201,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(second.capabilities.threadTitleRegeneration).toBe(true);
       expect(second.capabilities.threadPullRequests).toBe(true);
       expect(second.capabilities.threadPullRequestLinking).toBe(true);
+      expect(second.capabilities.serverResolvedCommandContext).toBe(true);
     }),
   );
 
@@ -191,7 +221,6 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         }).pipe(
           Effect.provide(
             ServerEnvironment.layer.pipe(
-              Layer.provide(ServerSecretStore.layer),
               Layer.provide(ServerConfig.layer({ ...serverConfig, ...overrides })),
             ),
           ),
@@ -201,7 +230,9 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(withFd.capabilities.serverSelfUpdate).toBe("desktop-managed");
       expect(withFd.capabilities.desktopAppUpdate).toBe(true);
       expect(withFd.capabilities.serverSelfUpdateProgress).toBe(true);
-      expect(withFd.capabilities.serverUpdateThreadContinuation).toBe(true);
+      // v2 recovery terminalizes running runs on restart, so continuation
+      // stays unadvertised until the v2 runtime carries the markers.
+      expect(withFd.capabilities.serverUpdateThreadContinuation).toBeUndefined();
 
       const withoutFd = yield* describeWith({ mode: "desktop" });
       expect(withoutFd.capabilities.serverSelfUpdate).toBe("desktop-managed");
@@ -238,7 +269,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
           description: "permission denied",
           pathOrDescriptor: environmentIdPath,
         });
-        const failingFileSystemLayer = FileSystem.layerNoop({
+        const layerFailingFileSystem = FileSystem.layerNoop({
           exists: () =>
             operation === "check" ? Effect.fail(cause) : Effect.succeed(operation === "read"),
           readFileString: () => Effect.fail(cause),
@@ -255,8 +286,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         }).pipe(
           Effect.provide(
             ServerEnvironment.layer.pipe(
-              Layer.provide(emptySecretStoreLayer),
-              Layer.provide(Layer.merge(ServerConfig.layer(serverConfig), failingFileSystemLayer)),
+              Layer.provide(Layer.merge(ServerConfig.layer(serverConfig), layerFailingFileSystem)),
             ),
           ),
           Effect.flip,

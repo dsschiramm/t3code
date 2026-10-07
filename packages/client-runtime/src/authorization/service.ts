@@ -16,7 +16,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
-import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClient from "effect/http/HttpClient";
 
 export interface AuthorizedRemoteEnvironment {
   readonly environmentId: EnvironmentId;
@@ -64,14 +64,15 @@ export const make = Effect.gen(function* () {
     >
   >(new Map());
 
-  const authorizeBearer = Effect.fn("clientRuntime.connection.remote.authorizeBearer")(
+  /**
+   * Confirms a direct address still serves the expected environment before a
+   * credential is sent there. A saved LAN address can belong to another
+   * machine on a different network.
+   */
+  const verifyDirectEndpoint = Effect.fn("clientRuntime.connection.remote.verifyDirectEndpoint")(
     function* (input: {
-      readonly expectedEnvironmentId: Parameters<
-        RemoteEnvironmentAuthorization["Service"]["authorizeBearer"]
-      >[0]["expectedEnvironmentId"];
+      readonly expectedEnvironmentId: EnvironmentId;
       readonly httpBaseUrl: string;
-      readonly wsBaseUrl: string;
-      readonly bearerToken: string;
       readonly connectionMethod: ClientConnectionMethod;
     }) {
       const now = yield* Clock.currentTimeMillis;
@@ -101,6 +102,21 @@ export const make = Effect.gen(function* () {
           return next;
         });
       }
+      return descriptor;
+    },
+  );
+
+  const authorizeBearer = Effect.fn("clientRuntime.connection.remote.authorizeBearer")(
+    function* (input: {
+      readonly expectedEnvironmentId: Parameters<
+        RemoteEnvironmentAuthorization["Service"]["authorizeBearer"]
+      >[0]["expectedEnvironmentId"];
+      readonly httpBaseUrl: string;
+      readonly wsBaseUrl: string;
+      readonly bearerToken: string;
+      readonly connectionMethod: ClientConnectionMethod;
+    }) {
+      const descriptor = yield* verifyDirectEndpoint(input);
       const socketUrl = yield* resolveRemoteWebSocketConnectionUrl({
         wsBaseUrl: input.wsBaseUrl,
         httpBaseUrl: input.httpBaseUrl,

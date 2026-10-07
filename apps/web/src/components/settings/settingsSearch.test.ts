@@ -176,7 +176,6 @@ describe("searchSettings", () => {
 
   it("offers Cursor Keychain settings only when a macOS provider environment is available", () => {
     const availability = {
-      hasCloudPublicConfig: false,
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
       hasMacProviderSettingsEnvironment: false,
@@ -270,6 +269,10 @@ describe("searchSettings", () => {
     });
     expect(searchSettings("word wrap")[0]).toMatchObject({
       id: "word-wrap",
+      to: "/settings/appearance",
+    });
+    expect(searchSettings("composer context")[0]).toMatchObject({
+      id: "composer-context",
       to: "/settings/appearance",
     });
     expect(searchSettings("environment identification")[0]).toMatchObject({

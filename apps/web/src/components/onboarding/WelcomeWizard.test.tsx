@@ -12,6 +12,12 @@ const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
   projects: [] as Array<{ id: string; environmentId: string; workspaceRoot: string }>,
 }));
+vi.mock("../../state/session", () => ({
+  useEnvironmentScope: () => true,
+  useEnvironmentsWithScope: (environments: Array<{ environmentId: string }>) =>
+    new Set(environments.map((entry) => entry.environmentId)),
+  readEnvironmentScope: () => true,
+}));
 vi.mock("../../state/agentSessions", () => ({ agentSessionImport: "import" }));
 vi.mock("../../state/projects", () => ({ projectEnvironment: { create: "create" } }));
 vi.mock("../../state/use-atom-command", () => ({
@@ -71,15 +77,11 @@ vi.mock("../../onboarding/useProjectScans", () => ({
 }));
 vi.mock("../../connection/onboarding", () => ({ connectPairing: vi.fn() }));
 vi.mock("../../state/terminal", () => ({ terminalEnvironment: {} }));
-vi.mock("../../cloud/publicConfig", () => ({ hasCloudPublicConfig: () => false }));
 vi.mock("../ThreadTerminalDrawer", () => ({ TerminalViewport: () => null }));
 vi.mock("../settings/ChatGptWelcomeCoordinator", () => ({ ChatGptWelcomeCoordinator: () => null }));
 vi.mock("../settings/CodexSetupSection", () => ({
   CodexSetupSection: () => null,
   AddManagedCodexAccountDialog: () => null,
-}));
-vi.mock("../cloud/CloudEnvironmentConnectList", () => ({
-  CloudEnvironmentConnectRows: () => null,
 }));
 vi.mock("../ui/toast", () => ({
   toastManager: { add: mocks.toast, close: vi.fn(), update: vi.fn() },
