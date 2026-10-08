@@ -65,19 +65,29 @@ export function setNotificationBadge(count: number) {
 }
 
 let audioContext: AudioContext | undefined;
+let activeSources = 0;
 const buffers = new Map<string, Promise<AudioBuffer>>();
 
-/** Called from a gesture so browsers allow later background playback. */
+/**
+ * Called from a gesture so browsers allow later background playback. The
+ * context is suspended right after unlocking: a running context keeps an
+ * output stream open and degrades other apps' audio on some systems.
+ */
 export function unlockNotificationAudio() {
-  audioContext ??= new AudioContext();
-  void audioContext.resume().catch(() => undefined);
+  if (audioContext) return;
+  const context = new AudioContext();
+  audioContext = context;
+  void context
+    .resume()
+    .then(() => context.suspend())
+    .catch(() => undefined);
 }
 
 export async function playNotificationSound(
   kind: "completion" | "input",
   shouldPlay: () => boolean,
 ) {
-  if (!audioContext || audioContext.state !== "running") return;
+  if (!audioContext || audioContext.state === "closed") return;
   const context = audioContext;
   const url = kind === "completion" ? completionUrl : inputUrl;
   try {
@@ -89,10 +99,17 @@ export async function playNotificationSound(
       buffers.set(url, buffer);
     }
     const decoded = await buffer;
-    if (!shouldPlay() || context.state !== "running") return;
+    if (!shouldPlay()) return;
+    await context.resume();
+    if (context.state !== "running") return;
     const source = context.createBufferSource();
     source.buffer = decoded;
     source.connect(context.destination);
+    activeSources += 1;
+    source.onended = () => {
+      activeSources -= 1;
+      if (activeSources === 0) void context.suspend().catch(() => undefined);
+    };
     source.start();
   } catch {
     buffers.delete(url);
