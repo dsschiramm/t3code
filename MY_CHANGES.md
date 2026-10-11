@@ -10,6 +10,7 @@ Registro dos commits do autor `daniel` que divergem da `main`. Consultar ao faze
 | dfde2babc | 2026-09-13 | feat(remote)!: remove Tailscale support                         |
 | 9efa889fc | 2026-09-14 | feat(github): remove github workflows                           |
 | cd0d161d9 | 2026-09-20 | refactor(connect)!: remove T3 Connect from server and contracts |
+| 0d8ca787b | 2026-10-08 | fix(web): suspend notification audio context when not in use    |
 
 ## O que manter removido em cada merge
 
