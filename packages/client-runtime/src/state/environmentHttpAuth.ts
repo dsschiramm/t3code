@@ -9,6 +9,7 @@ import type { PreparedConnection, PreparedHttpAuthorization } from "../connectio
 import {
   executeEnvironmentHttpRequest,
   makeEnvironmentHttpApiGroupClient,
+  makeEnvironmentHttpApiUrlBuilder,
   RemoteEnvironmentAuthTimeoutError,
   type RemoteEnvironmentRequestError,
 } from "../rpc/http.ts";
@@ -63,7 +64,8 @@ export const executeAuthenticatedEnvironmentHttpRequest = Effect.fn(
 >(input: {
   readonly prepared: PreparedConnection;
   readonly method: HttpMethod.HttpMethod;
-  readonly url: (httpBaseUrl: string) => string;
+  /** The URL of the request, from the group's contract URL builder. */
+  readonly url: (urls: ReturnType<typeof makeEnvironmentHttpApiUrlBuilder>[Group]) => string;
   readonly timeoutMs: number;
   readonly group: Group;
   readonly request: (input: {
@@ -77,19 +79,19 @@ export const executeAuthenticatedEnvironmentHttpRequest = Effect.fn(
 > {
   const { httpBaseUrl } = input.prepared;
   const authorization = input.prepared.httpAuthorization;
+  const requestUrl = input.url(makeEnvironmentHttpApiUrlBuilder(httpBaseUrl)[input.group]);
   return yield* Effect.gen(function* () {
     const client = yield* makeEnvironmentHttpApiGroupClient(httpBaseUrl, input.group);
     const headers = buildEnvironmentAuthHeaders(authorization);
     return yield* executeEnvironmentHttpRequest(
-      input.url(httpBaseUrl),
+      requestUrl,
       input.timeoutMs,
       withEnvironmentCredentials(authorization, input.request({ client, headers })),
     );
   }).pipe(
     Effect.timeoutOrElse({
       duration: input.timeoutMs,
-      orElse: () =>
-        Effect.fail(new RemoteEnvironmentAuthTimeoutError(input.url(httpBaseUrl), input.timeoutMs)),
+      orElse: () => Effect.fail(new RemoteEnvironmentAuthTimeoutError(requestUrl, input.timeoutMs)),
     }),
   );
 });

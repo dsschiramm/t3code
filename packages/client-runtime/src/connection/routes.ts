@@ -1,6 +1,7 @@
 import {
   isLocalLoopbackHost,
   isPrivateNetworkHost,
+  isSharedAddressSpaceHost,
   isTailnetHost,
 } from "@t3tools/shared/hostClassification";
 import type { DesktopSshEnvironmentTarget } from "@t3tools/contracts";
@@ -15,12 +16,12 @@ import { BearerConnectionTarget, type ConnectionTarget } from "./model.ts";
 
 /**
  * A saved environment can hold several routes: direct URLs (LAN, tailnet,
- * public) and SSH. The client connects over the first route in
+ * other VPNs, public) and SSH. The client connects over the first route in
  * preference order that answers as the expected environment, and moves back
  * to a better one when it becomes reachable again.
  */
 
-export type ConnectionRouteKind = "loopback" | "lan" | "tailnet" | "public" | "ssh";
+export type ConnectionRouteKind = "loopback" | "lan" | "tailnet" | "vpn" | "public" | "ssh";
 
 export function connectionRouteId(target: ConnectionTarget): string {
   switch (target._tag) {
@@ -90,6 +91,7 @@ export function connectionRouteKind(route: ConnectionRoute): ConnectionRouteKind
       if (hostname === null) return "public";
       if (isLocalLoopbackHost(hostname)) return "loopback";
       if (isTailnetHost(hostname)) return "tailnet";
+      if (isSharedAddressSpaceHost(hostname)) return "vpn";
       return isPrivateNetworkHost(hostname) ? "lan" : "public";
     }
   }
@@ -99,6 +101,7 @@ const ROUTE_KIND_RANK: Record<ConnectionRouteKind, number> = {
   loopback: 0,
   lan: 1,
   tailnet: 2,
+  vpn: 2,
   public: 3,
   ssh: 4,
 };
@@ -158,7 +161,7 @@ function routeAddressKey(route: ConnectionRoute): string | null {
   }
 }
 
-/** Short user-facing route description: "LAN", "Tailscale", a URL, or an SSH host. */
+/** Short user-facing route description: "LAN", "Tailscale", "VPN", a URL, or an SSH host. */
 export function connectionRouteLabel(route: ConnectionRoute): string {
   switch (connectionRouteKind(route)) {
     case "loopback":
@@ -167,6 +170,8 @@ export function connectionRouteLabel(route: ConnectionRoute): string {
       return "LAN";
     case "tailnet":
       return "Tailscale";
+    case "vpn":
+      return "VPN";
     case "ssh": {
       const profile = Option.getOrNull(route.profile);
       return profile?._tag === "SshConnectionProfile"
@@ -198,7 +203,7 @@ export function connectionRouteAddress(route: ConnectionRoute): string | null {
 export function mergeLearnedRoutes(input: {
   readonly entry: ConnectionCatalogEntry;
   readonly activeRoute: ConnectionRoute;
-  readonly reported: ReadonlyArray<{ readonly httpBaseUrl: string }>;
+  readonly reported: ReadonlyArray<ReportedEndpoint>;
   /** Plain HTTP routes are unusable from an HTTPS page (mixed content). */
   readonly allowInsecure: boolean;
 }): ReadonlyArray<ConnectionRoute> | null {
@@ -269,9 +274,18 @@ export function mergeLearnedRoutes(input: {
   // Compare addresses too: a scheme or port change keeps no id stable.
   const signature = (routes: ReadonlyArray<ConnectionRoute>) =>
     routes
-      .map((route) => `${connectionRouteId(route.target)} ${routeHttpBaseUrl(route) ?? ""}`)
+      .map(
+        (route) =>
+          `${connectionRouteId(route.target)} ${routeHttpBaseUrl(route) ?? ""} ${connectionRouteKind(route)}`,
+      )
       .join("\n");
   return signature(saved) === signature(next) ? null : next;
+}
+
+/** A direct address the server reports, as `ServerDirectEndpoint`. */
+export interface ReportedEndpoint {
+  readonly httpBaseUrl: string;
+  readonly kind?: string;
 }
 
 /**
