@@ -27,19 +27,19 @@ export const make = Effect.gen(function* () {
   const net = yield* NetService.NetService;
 
   const resolveTargets = Effect.gen(function* () {
-    // No local sshd means no name can work; advertise nothing so clients
-    // render a clear "no SSH route" state instead of links that hang.
     // Check both loopback families: sshd can be bound IPv6-only.
     const sshdListening = yield* Effect.zipWith(
       net.hasListenerOnHost(SSH_PORT, "127.0.0.1"),
       net.hasListenerOnHost(SSH_PORT, "::1"),
       (ipv4, ipv6) => ipv4 || ipv6,
     );
-    if (!sshdListening) {
-      return [];
-    }
 
     const targets: Array<RemoteOpenTarget> = [];
+    if (!sshdListening) {
+      // Advertise nothing so clients render a clear "no SSH route" state
+      // instead of links that hang.
+      return targets;
+    }
 
     // os.hostname() may already be an FQDN (macOS often reports
     // "Name.local"); mDNS names are always `<first-label>.local`.

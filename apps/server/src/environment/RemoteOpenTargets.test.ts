@@ -26,7 +26,7 @@ const resolveTargets = (input: {
   );
 
 describe("RemoteOpenTargets", () => {
-  it.effect("advertises nothing when no sshd accepts on either loopback", () =>
+  it.effect("advertises nothing when no sshd accepts", () =>
     Effect.gen(function* () {
       const targets = yield* resolveTargets({
         sshd: { ipv4: false, ipv6: false },
