@@ -1,4 +1,4 @@
-import { DEFAULT_HOSTED_APP_URL } from "./connectAuth.ts";
+const DEFAULT_HOSTED_APP_URL = "https://app.t3.codes";
 
 /**
  * Prompt links open T3 Code from outside it with a prompt ready to send. They never send it:
