@@ -1,4 +1,5 @@
-import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
+import * as Dialog from "../../components/ui/Dialog";
+import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import {
@@ -11,27 +12,26 @@ import {
 import type { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Linking, Pressable, StyleSheet, View } from "react-native";
+import { Linking, Pressable, StyleSheet, View } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
-import { AppText as Text, AppTextInput, type AppTextInputProps } from "../../components/AppText";
-import { FrostedCutout } from "../../components/FrostedCutout";
+import { AppText as Text, AppTextInput, type AppTextInputProps } from "../../components/ui/AppText";
+import { FrostedCutout } from "../../components/ui/FrostedCutout";
 import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
 import {
   setPendingConnectionError,
   useRemoteConnections,
 } from "../../state/use-remote-environment-registry";
-import { SymbolView } from "../../components/AppSymbol";
+import { SymbolView } from "../../components/ui/AppSymbol";
 
 type ConnectionsNewRouteParams = {
   readonly mode?: string;
   readonly pairingUrl?: string;
   readonly autoConnect?: string;
-  /** Adds a route to this saved machine instead of a new environment. */
   readonly routeFor?: EnvironmentId;
 };
 
@@ -101,10 +101,8 @@ export function ConnectionsNewRouteScreen({
     setPendingConnectionError(null);
   }, []);
 
-  // The error is shared app state; a stale failure must not greet the next visit.
   useEffect(() => () => setPendingConnectionError(null), []);
 
-  // Opening the sheet never prompts; a tap on the scan card asks for the camera.
   const handleScanPress = useCallback(async () => {
     const permission = await requestCameraPermission();
     if (permission.granted) {
@@ -112,7 +110,7 @@ export function ConnectionsNewRouteScreen({
       return;
     }
     if (permission.canAskAgain) return;
-    Alert.alert(
+    Dialog.alert(
       "Camera access needed",
       "Camera access was denied for this app. Open Settings to enable it.",
       [
@@ -140,7 +138,7 @@ export function ConnectionsNewRouteScreen({
         setScannerLocked(false);
       } catch (error) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert(
+        Dialog.alert(
           "Invalid QR code",
           error instanceof Error ? error.message : "Scanned QR code was not recognized.",
         );
@@ -153,7 +151,7 @@ export function ConnectionsNewRouteScreen({
   );
 
   const connectAndClose = useCallback(
-    async (pairingUrl: string, replaceWithHome: boolean) => {
+    async (pairingUrl: string) => {
       setIsSubmitting(true);
       onChangeConnectionPairingUrl(pairingUrl);
       try {
@@ -164,7 +162,9 @@ export function ConnectionsNewRouteScreen({
             : Haptics.NotificationFeedbackType.Error,
         );
         if (AsyncResult.isSuccess(result)) {
-          if (replaceWithHome || !navigation.canGoBack()) {
+          // Return to whatever opened the sheet. Replacing it with Home would
+          // nest Home inside any sheet still below it.
+          if (!navigation.canGoBack()) {
             navigation.dispatch(StackActions.replace("Home"));
           } else {
             navigation.goBack();
@@ -178,7 +178,7 @@ export function ConnectionsNewRouteScreen({
   );
 
   const handleSubmit = useCallback(async () => {
-    await connectAndClose(buildPairingUrl(hostInput, codeInput), false);
+    await connectAndClose(buildPairingUrl(hostInput, codeInput));
   }, [codeInput, connectAndClose, hostInput]);
 
   useEffect(() => {
@@ -187,7 +187,7 @@ export function ConnectionsNewRouteScreen({
     }
 
     attemptedAutoConnectRef.current = routePairingUrl;
-    void connectAndClose(routePairingUrl, true);
+    void connectAndClose(routePairingUrl);
   }, [connectAndClose, routePairingUrl, shouldAutoConnect]);
 
   return (
@@ -278,11 +278,6 @@ const SCAN_RETICLE_SIZE = 150;
 const SCAN_RETICLE_TOP = 36;
 const SCAN_RETICLE_RADIUS = 28;
 
-/**
- * Live QR scanner: the camera fills the card, blurred everywhere except the
- * reticle so the code being aimed at stays sharp. Without a camera it shows the
- * same frame over a dark gradient.
- */
 function PairingScanCard(props: {
   readonly cameraActive: boolean;
   readonly onScan: (result: { readonly data: string }) => void;
@@ -367,5 +362,31 @@ function PairingScanCard(props: {
         </Text>
       </View>
     </Pressable>
+  );
+}
+
+function PairingInputRow({
+  label,
+  ...inputProps
+}: Omit<AppTextInputProps, "accessibilityLabel" | "className"> & {
+  readonly label: string;
+}) {
+  return (
+    <View collapsable={false} className="h-13 flex-row items-center gap-3 px-4">
+      <Text
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        className="w-20 text-base leading-[23px] text-foreground-muted"
+      >
+        {label}
+      </Text>
+      <AppTextInput
+        {...inputProps}
+        accessibilityLabel={label}
+        autoCapitalize="none"
+        autoCorrect={false}
+        className="min-h-0 flex-1 rounded-none border-0 bg-transparent p-0 text-base leading-[23px]"
+      />
+    </View>
   );
 }

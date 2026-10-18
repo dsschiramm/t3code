@@ -29,11 +29,9 @@ export class DirectEndpoints extends Context.Service<
 >()("t3/environment/DirectEndpoints") {}
 
 /**
- * Only numeric private-network IPv4 addresses, including VPN ranges such as
- * 100.64.0.0/10, are reported. These routes are plain HTTP and carry the
- * client's credential, so a public address would send it across the internet
- * unencrypted, and a name (`server.local`) can resolve to a different machine
- * on each client's network.
+ * These routes are plain HTTP and carry the client's credential, so a public
+ * address would send it across the internet unencrypted, and a name
+ * (`server.local`) can resolve to a different machine on each client's network.
  */
 const isAdvertisableAddress = (address: string): boolean =>
   NodeNet.isIPv4(address) &&
@@ -63,11 +61,6 @@ const isTailscaleInterface = (
   /^tailscale/i.test(name) ||
   entries.some((entry) => entry.family === "IPv6" && isTailnetHost(entry.address));
 
-/**
- * Plain HTTP endpoints for the private addresses a server bound to `host`
- * accepts. IPv4 only: link-local and temporary IPv6 addresses change too
- * often to be worth saving.
- */
 export function resolveBoundEndpoints(input: {
   readonly host: string | undefined;
   readonly port: number;

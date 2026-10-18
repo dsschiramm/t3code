@@ -33,12 +33,10 @@ export function connectionRouteId(target: ConnectionTarget): string {
   }
 }
 
-/** Every route of an entry, preferred first. */
 export function connectionRoutes(entry: ConnectionCatalogEntry): ReadonlyArray<ConnectionRoute> {
   return [{ target: entry.target, profile: entry.profile }, ...(entry.alternateRoutes ?? [])];
 }
 
-/** Builds an entry whose preferred route is the first of `routes`, which must not be empty. */
 export function entryWithRoutes(
   entry: ConnectionCatalogEntry,
   routes: ReadonlyArray<ConnectionRoute>,
@@ -56,7 +54,6 @@ export function entryWithRoutes(
   };
 }
 
-/** The entry a single route connects with. */
 export function routeEntry(
   entry: ConnectionCatalogEntry,
   route: ConnectionRoute,
@@ -124,7 +121,6 @@ export function insertRoute(
     : [...routes.slice(0, index), route, ...routes.slice(index)];
 }
 
-/** Replaces the route with the same id in place, or inserts it by kind. */
 export function upsertRoute(
   routes: ReadonlyArray<ConnectionRoute>,
   route: ConnectionRoute,
@@ -135,12 +131,6 @@ export function upsertRoute(
     : insertRoute(routes, route);
 }
 
-/**
- * A saved route that reaches the same address as `route`: the same bearer
- * URL, or the same SSH target (alias, host, user, and port, as desktop keys
- * its tunnels). Registering it again replaces that route, even when it was
- * saved under another id.
- */
 export function findRouteToSameAddress(
   routes: ReadonlyArray<ConnectionRoute>,
   route: ConnectionRoute,
@@ -217,6 +207,7 @@ export function mergeLearnedRoutes(input: {
 
   // Usable reported addresses, by origin.
   const reported = new Map<string, URL>();
+  const tailscaleOrigins = new Set<string>();
   for (const endpoint of input.reported) {
     let url: URL;
     try {
@@ -229,6 +220,7 @@ export function mergeLearnedRoutes(input: {
     // A loopback address names whichever device opens it, never the server.
     if (isLocalLoopbackHost(url.hostname)) continue;
     reported.set(url.origin, url);
+    if (endpoint.kind === "tailnet") tailscaleOrigins.add(url.origin);
   }
   const normalized = (url: string) => url.replace(/\/+$/, "");
   const known = new Set(
@@ -241,12 +233,21 @@ export function mergeLearnedRoutes(input: {
     if (!isLearned(route)) return true;
     const url = routeHttpBaseUrl(route);
     if (url === null || !reported.has(normalized(url)) || known.has(normalized(url))) return false;
+    if (sendsTokenInClear(saved, route, tailscaleOrigins.has(normalized(url)))) return false;
     known.add(normalized(url));
     return true;
   });
   let next: ReadonlyArray<ConnectionRoute> = kept;
   for (const url of reported.values()) {
     if (known.has(url.origin)) continue;
+    if (
+      url.protocol === "http:" &&
+      sharedCredential !== undefined &&
+      !tailscaleOrigins.has(url.origin) &&
+      !tokenAllowsPlainHttp(saved, sharedCredential)
+    ) {
+      continue;
+    }
     const httpBaseUrl = `${url.origin}/`;
     const connectionId = learnedConnectionId(
       entry.target.environmentId,
@@ -271,7 +272,6 @@ export function mergeLearnedRoutes(input: {
       ),
     });
   }
-  // Compare addresses too: a scheme or port change keeps no id stable.
   const signature = (routes: ReadonlyArray<ConnectionRoute>) =>
     routes
       .map(
@@ -282,7 +282,52 @@ export function mergeLearnedRoutes(input: {
   return signature(saved) === signature(next) ? null : next;
 }
 
-/** A direct address the server reports, as `ServerDirectEndpoint`. */
+// A paired token goes to a plain HTTP address outside the tailnet only when
+// it was paired that way, so a token paired over HTTPS, loopback, or the
+// tailnet keeps to the transports it was issued for.
+function tokenAllowsPlainHttp(
+  routes: ReadonlyArray<ConnectionRoute>,
+  credentialId: string,
+): boolean {
+  const credentialRoute = routes.find((route) => connectionRouteId(route.target) === credentialId);
+  return (
+    credentialRoute !== undefined &&
+    routeHttpBaseUrl(credentialRoute)?.startsWith("http:") === true &&
+    (connectionRouteKind(credentialRoute) === "lan" ||
+      connectionRouteKind(credentialRoute) === "public")
+  );
+}
+
+/**
+ * Whether connecting over `route` would send a paired token over plain HTTP
+ * that it wasn't paired over. Checked against the token the route borrows,
+ * so a route learned before this rule existed is refused too.
+ */
+export function sendsTokenInClear(
+  routes: ReadonlyArray<ConnectionRoute>,
+  route: ConnectionRoute,
+  tailscale?: boolean,
+): boolean {
+  const profile = Option.getOrNull(route.profile);
+  if (profile?._tag !== "BearerConnectionProfile") return false;
+  if (
+    (tailscale ?? connectionRouteKind(route) === "tailnet") ||
+    !profile.httpBaseUrl.startsWith("http:")
+  ) {
+    return false;
+  }
+  const credentialId = credentialConnectionId(connectionRouteId(route.target));
+  return (
+    credentialId !== connectionRouteId(route.target) && !tokenAllowsPlainHttp(routes, credentialId)
+  );
+}
+
+/** Routes a connect may use: none sends a paired token over plain HTTP it wasn't paired over. */
+export function usableRoutes(entry: ConnectionCatalogEntry): ReadonlyArray<ConnectionRoute> {
+  const routes = connectionRoutes(entry);
+  return routes.filter((route) => !sendsTokenInClear(routes, route));
+}
+
 export interface ReportedEndpoint {
   readonly httpBaseUrl: string;
   readonly kind?: string;
@@ -300,10 +345,7 @@ function learnedConnectionId(
   return `learned:${environmentId}:${origin}@${sharedCredential}`;
 }
 
-/** The connection id whose stored credential a bearer route uses. */
 export function credentialConnectionId(connectionId: string): string {
-  // The borrowed id follows the first "@"; neither an environment id nor an
-  // origin contains one.
   const at = connectionId.indexOf("@");
   return connectionId.startsWith("learned:") && at !== -1
     ? connectionId.slice(at + 1)

@@ -105,7 +105,6 @@ describe("connection presentation", () => {
     expect(environmentMcpUrl({ entry, connectedTarget: tailnet.target })).toBe(
       "http://100.115.1.44:3773/mcp",
     );
-    // Not connected: the preferred route, plain http or not.
     expect(environmentMcpUrl({ entry })).toBe("http://192.168.4.53:3773/mcp");
   });
 

@@ -19,7 +19,6 @@ export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
   const layerConnectionServices = Layer.mergeAll(
     layerRegistry,
     layerOnboarding,
-    // Exposed for updating hosts too old to connect through the driver.
     ConnectionResolver.layer,
   );
   const layerConnectionStartup = Layer.effectDiscard(

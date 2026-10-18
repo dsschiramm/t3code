@@ -18,7 +18,6 @@ function isApplicationActiveWakeup(reason: ConnectionWakeup): boolean {
   );
 }
 
-/** Conditions changed enough that a pending retry should run now, from the first rung. */
 export function resetsRetryBackoff(reason: ConnectionWakeup): boolean {
   return isApplicationActiveWakeup(reason) || reason === "network-changed";
 }

@@ -18,7 +18,9 @@ import {
   entryWithRoutes,
   mergeLearnedRoutes,
   routesAfterRemoving,
+  sendsTokenInClear,
   upsertRoute,
+  usableRoutes,
 } from "./routes.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
@@ -45,6 +47,15 @@ function direct(id: string, httpBaseUrl: string): ConnectionRoute {
 const LAN = direct("lan", "http://192.168.1.10:3773/");
 const TAILNET = direct("tailnet", "https://desk.tail1234.ts.net/");
 const PUBLIC = direct("public", "https://desk.example.com/");
+
+function learned(id: string, httpBaseUrl: string): ConnectionRoute {
+  const route = direct(id, httpBaseUrl);
+  const profile = Option.getOrThrow(route.profile) as BearerConnectionProfile;
+  return {
+    target: route.target,
+    profile: Option.some(new BearerConnectionProfile({ ...profile, learned: true })),
+  };
+}
 
 describe("connection routes", () => {
   it("classifies direct routes by address", () => {
@@ -142,7 +153,6 @@ describe("learned routes", () => {
         allowInsecure: true,
       }),
     ).toBeNull();
-    // A newly reported address is still placed by speed.
     const next = mergeLearnedRoutes({
       entry: reordered,
       activeRoute: PUBLIC,
@@ -171,7 +181,6 @@ describe("learned routes", () => {
         allowInsecure: true,
       }),
     ).toBeNull();
-    // The server stops reporting the LAN address; the paired route stays.
     expect(
       mergeLearnedRoutes({ entry, activeRoute: PUBLIC, reported: [], allowInsecure: true }),
     ).toBeNull();
@@ -191,6 +200,79 @@ describe("learned routes", () => {
     })!;
     const learned = routes.find((route) => connectionRouteKind(route) === "tailnet")!;
     expect(credentialConnectionId(connectionRouteId(learned.target))).toBe("lan");
+  });
+
+  it("keeps a token paired over HTTPS off plain HTTP addresses outside the tailnet", () => {
+    const routes = mergeLearnedRoutes({
+      entry: publicOnly,
+      activeRoute: PUBLIC,
+      reported: [
+        { kind: "lan", httpBaseUrl: "http://192.168.1.10:3773/" },
+        { kind: "tailnet", httpBaseUrl: "http://100.101.102.103:3773/" },
+        { kind: "tailnet", httpBaseUrl: "https://desk.tail1234.ts.net/" },
+      ],
+      allowInsecure: true,
+    });
+    expect(ids(routes)).toEqual([
+      `learned:${ENVIRONMENT_ID}:http://100.101.102.103:3773@public`,
+      `learned:${ENVIRONMENT_ID}:https://desk.tail1234.ts.net@public`,
+      "public",
+    ]);
+  });
+
+  it("drops a plain HTTP LAN route learned earlier over an HTTPS-paired token", () => {
+    const lanOrigin = "http://192.168.1.10:3773";
+    const stale = direct(`learned:${ENVIRONMENT_ID}:${lanOrigin}@public`, `${lanOrigin}/`);
+    const staleProfile = profileOf(stale) as BearerConnectionProfile;
+    const learnedStale: ConnectionRoute = {
+      target: stale.target,
+      profile: Option.some(new BearerConnectionProfile({ ...staleProfile, learned: true })),
+    };
+    const routes = mergeLearnedRoutes({
+      entry: entryWithRoutes(publicOnly, [learnedStale, PUBLIC]),
+      activeRoute: PUBLIC,
+      reported: [{ kind: "lan", httpBaseUrl: `${lanOrigin}/` }],
+      allowInsecure: true,
+    });
+    expect(ids(routes)).toEqual(["public"]);
+  });
+
+  it("drops a stale plain HTTP route borrowing an HTTPS-paired token", () => {
+    const lanOrigin = "http://10.0.0.42:3773";
+    const stale = learned(`learned:${ENVIRONMENT_ID}:${lanOrigin}@public`, `${lanOrigin}/`);
+    const entry = entryWithRoutes(publicOnly, [stale, PUBLIC]);
+    expect(sendsTokenInClear([stale, PUBLIC], stale)).toBe(true);
+    expect(ids(usableRoutes(entry))).toEqual(["public"]);
+    const routes = mergeLearnedRoutes({
+      entry,
+      activeRoute: PUBLIC,
+      reported: [{ kind: "lan", httpBaseUrl: `${lanOrigin}/` }],
+      allowInsecure: true,
+    });
+    expect(ids(routes)).toEqual(["public"]);
+  });
+
+  it("keeps plain HTTP routes that don't borrow the active HTTPS-paired token", () => {
+    const lanOrigin = "http://10.0.0.42:3773";
+    const overLan = learned(`learned:${ENVIRONMENT_ID}:${lanOrigin}@lan`, `${lanOrigin}/`);
+    const routes = mergeLearnedRoutes({
+      entry: entryWithRoutes(publicOnly, [overLan, LAN, PUBLIC]),
+      activeRoute: PUBLIC,
+      reported: [{ kind: "lan", httpBaseUrl: `${lanOrigin}/` }],
+      allowInsecure: true,
+    });
+    expect(routes).toBeNull();
+  });
+
+  it("learns plain HTTP LAN addresses over a token paired over plain HTTP", () => {
+    const entry = entryWithRoutes(publicOnly, [LAN]);
+    const routes = mergeLearnedRoutes({
+      entry,
+      activeRoute: LAN,
+      reported: [{ kind: "lan", httpBaseUrl: "http://10.0.0.42:3773/" }],
+      allowInsecure: true,
+    });
+    expect(ids(routes)).toEqual(["lan", `learned:${ENVIRONMENT_ID}:http://10.0.0.42:3773@lan`]);
   });
 
   it("skips plain HTTP from an HTTPS page and never learns loopback", () => {

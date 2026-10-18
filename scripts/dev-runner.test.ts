@@ -406,9 +406,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
-    // Browser dev is single-origin: Vite proxies the backend, and the client
-    // resolves it from window.location.origin. Baking a localhost URL here is
-    // what breaks sharing a dev server to another device.
     it.effect.each(["dev", "dev:web"] as const)(
       "leaves the client backend URLs unset in %s mode",
       (mode) =>
@@ -440,8 +437,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         }),
     );
 
-    // Desktop pins the renderer at loopback deliberately; an ambient marker
-    // must not make Vite discard those URLs.
     it.effect("clears the single-origin marker in dev:desktop mode", () =>
       Effect.gen(function* () {
         const env = yield* createDevRunnerEnv({
@@ -484,9 +479,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
-    // HOST is Vite's bind address and gates the HMR pin in vite.config.ts. An
-    // inherited one would survive into browser dev and point HMR at the wrong
-    // interface — invisible over a shared origin, since the page still loads.
     it.effect.each(["dev", "dev:web"] as const)("drops an inherited HOST in %s mode", (mode) =>
       Effect.gen(function* () {
         const env = yield* createDevRunnerEnv({
@@ -507,8 +499,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
-    // --host configures the *backend* (T3CODE_HOST). It must not become Vite's
-    // bind address by way of an inherited HOST that happens to agree with it.
     it.effect("drops an inherited HOST even when --host is given", () =>
       Effect.gen(function* () {
         const env = yield* createDevRunnerEnv({
@@ -530,7 +520,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
-    // Desktop sets HOST itself, so the clearing must not reach it.
     it.effect("still pins HOST for dev:desktop", () =>
       Effect.gen(function* () {
         const env = yield* createDevRunnerEnv({
@@ -723,8 +712,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
-    // A port free on loopback can be taken on the interface the server will
-    // actually bind, so --host/T3CODE_HOST has to be probed as well.
     it.effect("adds a non-loopback bind host to the probe list", () =>
       Effect.sync(() => {
         assert.deepStrictEqual(devPortProbeHosts("0.0.0.0"), ["127.0.0.1", "::1", "0.0.0.0"]);
@@ -742,9 +729,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
-    // Only the backend honours --host/T3CODE_HOST. Vite reads HOST (set for
-    // desktop only), so judging the web port against the backend's interface
-    // would reject ports for a server that never binds there.
     it.effect("passes the port role so only the server port sees the bind host", () =>
       Effect.gen(function* () {
         const probed: Array<{ port: number; role: string | undefined }> = [];
@@ -955,9 +939,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       });
     });
 
-    // Wildcards keep loopback answering, so the proxy target stays valid and
-    // the combination must keep working — it is the documented way to serve a
-    // LAN interface and the browser proxy at once.
     it.effect("still spawns the stack for a wildcard --host in dev mode", () => {
       let spawnCount = 0;
       const spawnerLayer = Layer.succeed(
@@ -983,8 +964,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       });
     });
 
-    // dev:server does not proxy — the client talks to the backend directly —
-    // so a specific interface bind stays legitimate there.
     it.effect("keeps a specific --host working for dev:server", () => {
       let spawnCount = 0;
       const spawnerLayer = Layer.succeed(

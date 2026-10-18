@@ -46,10 +46,8 @@ const FETCH_BAD_PORTS = new Set([
 const DEV_PORT_PROBE_HOSTS = ["127.0.0.1", "::1"] as const;
 
 /**
- * Bind hosts on which a backend still answers `http://localhost:<port>`, which
- * is where single-origin browser dev proxies to. Loopback and the wildcards
- * qualify; a specific interface (e.g. a LAN IP) does not — the OS binds only
- * that address and the proxy target goes dark.
+ * Loopback and the wildcards qualify; a specific interface (e.g. a LAN IP) does
+ * not — the OS binds only that address and the proxy target goes dark.
  */
 export function isProxiableBindHost(host: string): boolean {
   const normalized = host.trim();
@@ -86,8 +84,7 @@ const MODE_ARGS = {
 type DevMode = keyof typeof MODE_ARGS;
 /**
  * `role` matters because only the backend honours `--host`/`T3CODE_HOST`; the
- * web port is always loopback. Passed explicitly rather than inferred from the
- * port number, which stops distinguishing them under a large port offset.
+ * web port is always loopback.
  */
 type PortAvailabilityCheck<R = never> = (
   port: number,
@@ -250,11 +247,6 @@ export function resolveOffset(config: {
     return Effect.succeed({ offset, source: `hashed T3CODE_DEV_INSTANCE=${seed}` });
   }
 
-  // Worktrees get ports derived from their path so each one is stable across
-  // restarts and distinct from its siblings. Without this every worktree starts
-  // at offset 0 and scan-collides onto whatever happens to be free that minute,
-  // so ports move under you between runs — which breaks any URL you already
-  // shared. The main checkout keeps the documented 5733/13773.
   const worktreePath = config.worktreePath?.trim();
   if (worktreePath) {
     const offset = ((Hash.string(worktreePath) >>> 0) % MAX_HASH_OFFSET) + 1;
@@ -307,8 +299,6 @@ export function createDevRunnerEnv({
   return Effect.gen(function* () {
     const serverPort = port ?? BASE_SERVER_PORT + serverOffset;
     const webPort = BASE_WEB_PORT + webOffset;
-    // Precedence (--home-dir > worktree .t3 > ambient T3CODE_HOME) is resolved
-    // by the caller; an unset t3Home here genuinely means "use the default".
     const configuredBaseDir = t3Home?.trim() || undefined;
     const resolvedBaseDir = yield* resolveBaseDir(configuredBaseDir);
     const isDesktopMode = mode === "dev:desktop";
@@ -341,24 +331,18 @@ export function createDevRunnerEnv({
       // only place we set it. An inherited one (an exported HOST, a container,
       // a `HOST=0.0.0.0 npm start` habit) would otherwise reach Vite and pin
       // its HMR socket to that address — see the `explicitHost` gate in
-      // apps/web/vite.config.ts. Over a shared origin that is invisible: the
-      // page loads and only HMR quietly dials the wrong machine.
+      // apps/web/vite.config.ts.
       delete output.HOST;
       if (mode === "dev" || mode === "dev:web") {
         // Browser dev is single-origin: everything (including /ws) is proxied
         // through Vite, so the client must resolve its backend from
-        // window.location.origin rather than a baked-in localhost URL. See
-        // resolveConfiguredPrimaryTarget in apps/web/src/environments/primary/target.ts
-        // — it only defers to the origin when both of these are absent. Baking
-        // localhost here is what breaks any non-localhost origin (tailnet, LAN,
-        // phone): the remote browser dials its own machine.
+        // window.location.origin rather than a baked-in localhost URL.
         delete output.VITE_HTTP_URL;
         delete output.VITE_WS_URL;
         // Deleting is not enough on its own: vite.config.ts calls loadRepoEnv,
         // which merges `.env`/`.env.local` *under* this env, so a developer
         // with either URL in their `.env` would get it back and silently lose
-        // single-origin mode. This states the intent positively so Vite can
-        // ignore those values rather than infer from their absence.
+        // single-origin mode.
         output.T3CODE_SINGLE_ORIGIN_DEV = "1";
       } else {
         output.VITE_HTTP_URL = `http://localhost:${serverPort}`;
@@ -443,21 +427,6 @@ export function checkPortAvailabilityOnHosts<R>(
   });
 }
 
-/**
- * Hosts to probe for a dev server bound to `configuredHost`.
- *
- * Loopback is always checked because the web server and the desktop renderer
- * target reach it there. When `--host`/`T3CODE_HOST` moves the backend onto
- * another interface, that interface decides whether the bind actually
- * succeeds — probing only loopback would hand back a port that is free here
- * and taken there, and the server would fail to start.
- *
- * `configuredHost` applies to the *backend* only. Vite takes its bind address
- * from `HOST`, which the runner sets for desktop alone, so the web port stays
- * on loopback and must not be judged against the backend's interface —
- * a port free on loopback but busy on that interface would otherwise be
- * rejected for a server that was never going to bind there.
- */
 export function devPortProbeHosts(configuredHost: string | undefined): ReadonlyArray<string> {
   const host = configuredHost?.trim();
   if (!host || DEV_PORT_PROBE_HOSTS.includes(host as (typeof DEV_PORT_PROBE_HOSTS)[number])) {
@@ -629,11 +598,6 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       ),
     );
 
-    // Single-origin browser dev proxies the backend at localhost. A wildcard
-    // bind still answers there; a specific non-loopback interface does not,
-    // which breaks every proxied request in a way that reads as "server is
-    // broken" rather than "flag combination is unsupported". Reject it up
-    // front instead. (dev:server and dev:desktop don't proxy — untouched.)
     if (
       (input.mode === "dev" || input.mode === "dev:web") &&
       input.host !== undefined &&
@@ -655,8 +619,6 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       startOffset: offset,
       hasExplicitServerPort: input.port !== undefined,
       hasExplicitDevUrl: input.devUrl !== undefined,
-      // A non-loopback bind host decides whether the backend can actually take
-      // the port, so it has to be probed alongside loopback.
       checkPortAvailability: makeDefaultCheckPortAvailability(input.host),
     });
 

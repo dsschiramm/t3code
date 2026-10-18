@@ -43,7 +43,6 @@ const INTERFACES: ReturnType<typeof NodeOS.networkInterfaces> = {
       cidr: "203.0.113.20/24",
     },
   ],
-  // Tailscale on macOS: an anonymous utun that also carries a Tailscale IPv6 address.
   utun4: [
     {
       address: "100.101.102.103",
@@ -65,7 +64,6 @@ const INTERFACES: ReturnType<typeof NodeOS.networkInterfaces> = {
   ],
 };
 
-/** A VPN interface with an address from the same 100.64.0.0/10 range. */
 const vpnInterface = (address: string) => [
   {
     address,

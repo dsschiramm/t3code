@@ -21,11 +21,6 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
     ...ConnectionProfileBase,
     httpBaseUrl: Schema.String,
     wsBaseUrl: Schema.String,
-    /**
-     * Set on a route the server reported while this client was connected,
-     * rather than one the user paired. Learned routes are replaced when the
-     * server reports a different address, for example after a DHCP change.
-     */
     learned: Schema.optionalKey(Schema.Literal(true)),
   },
 ) {}
@@ -47,20 +42,12 @@ export interface ConnectionRoute {
   readonly profile: Option.Option<ConnectionProfile>;
 }
 
-/**
- * A saved environment. `target` and `profile` are its preferred route;
- * `alternateRoutes` holds the others in preference order. Read them together
- * with `connectionRoutes`.
- */
 export interface ConnectionCatalogEntry {
   readonly target: ConnectionTarget;
   readonly profile: Option.Option<ConnectionProfile>;
   readonly alternateRoutes?: ReadonlyArray<ConnectionRoute>;
-  /** False when the user switched the environment off: saved, but never connects. */
   readonly enabled: boolean;
-  /** Discovery rejection stays visible while the saved connection is switched off. */
   readonly unsupportedReason?: string;
-  /** The rejection came from an outdated host, which can still be updated remotely. */
   readonly serverUpdateRequired?: boolean;
 }
 
@@ -95,6 +82,8 @@ export class SshConnectionRegistration extends Schema.TaggedClass<SshConnectionR
   {
     target: SshConnectionTarget,
     profile: SshConnectionProfile,
+    /** The token from pairing over SSH, which later connects reuse. */
+    credential: BearerConnectionCredential,
   },
 ) {}
 
@@ -105,13 +94,10 @@ export const ConnectionRegistration = Schema.Union([
 export type ConnectionRegistration = typeof ConnectionRegistration.Type;
 
 /**
- * Platform-managed registrations are reconciled from the host (the desktop
- * bootstrap IPC) rather than persisted by the user. They cover the primary
- * local environment plus any additional desktop-local backends running
- * alongside it (e.g. a parallel WSL backend). The primary stays on same-origin
- * cookie auth (`PrimaryConnectionRegistration`); secondary local backends live
- * on a separate loopback origin and authenticate with a bearer token minted
- * from their bootstrap credential (`BearerConnectionRegistration`).
+ * The primary stays on same-origin cookie auth
+ * (`PrimaryConnectionRegistration`); secondary local backends live on a
+ * separate loopback origin and authenticate with a bearer token minted from
+ * their bootstrap credential (`BearerConnectionRegistration`).
  */
 export const PlatformConnectionRegistration = Schema.Union([
   PrimaryConnectionRegistration,

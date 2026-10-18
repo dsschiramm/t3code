@@ -143,7 +143,6 @@ export class EnvironmentAuthInvalidError extends Schema.TaggedError<EnvironmentA
   {
     code: Schema.Literal("auth_invalid"),
     reason: EnvironmentAuthInvalidReason,
-    // Older servers do not send a DPoP failure category.
     dpopFailureReason: Schema.optionalKey(DpopFailureReason),
     traceId: TrimmedNonEmptyString,
   },
@@ -468,12 +467,6 @@ class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
-/**
- * The OAuth authorization server outside agents use to sign in to `/mcp`.
- * `authorize` is where the agent sends the browser: it answers a redirect to
- * the web app's approval page, or a plain error page for a request that names
- * an unverified client or redirect, so the response is not a schema.
- */
 class EnvironmentMcpOAuthHttpApi extends HttpApiGroup.make("mcpOAuth")
   .add(
     HttpApiEndpoint.get("protectedResource", "/.well-known/oauth-protected-resource", {
@@ -524,10 +517,6 @@ const EnvironmentOrchestrationThreadSnapshotParams = Schema.Struct({
   threadId: ThreadId,
 });
 
-/**
- * `compactTurnItems=1` opts into `turnItemsOmitLocalVisible`. Other values are
- * ignored, and older servers ignore the whole query.
- */
 const EnvironmentOrchestrationThreadBoundedSnapshotQuery = Schema.Struct({
   compactTurnItems: Schema.optionalKey(Schema.String),
 });
@@ -605,7 +594,6 @@ class EnvironmentProjectsHttpApi extends HttpApiGroup.make("projects")
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
-/** Large, compressible pull-request payloads travel over HTTP rather than the RPC socket. */
 class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullRequests").add(
   HttpApiEndpoint.post("diff", "/api/pull-requests/diff", {
     headers: OptionalBearerHeaders,

@@ -50,7 +50,6 @@ export const layer = HttpApiBuilder.group(
           ),
           Effect.option,
         );
-        // Refused before a task is looked up, so the service never sees them.
         const tooLarge = (error: string) =>
           Metrics.increment(Metrics.webhookDeliveriesTotal, {
             outcome: "body_too_large",
