@@ -11,7 +11,7 @@ import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import type * as Types from "effect/Types";
-import { AiError, McpProtocol, McpSchema, McpServer, Tool, type Toolkit } from "effect/ai";
+import { AiError, McpProtocol, McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { OrchestratorMcpFailure, PreviewAutomationError } from "@t3tools/contracts";
 
@@ -124,7 +124,7 @@ type McpAuthMiddleware = (
   HttpServerRequest.HttpServerRequest
 >;
 
-export const normalizeMcpHttpResponse = (
+const normalizeMcpHttpResponse = (
   response: HttpServerResponse.HttpServerResponse,
 ): HttpServerResponse.HttpServerResponse => {
   const bodyIsEmpty =
@@ -386,6 +386,22 @@ const saveScreenshot = Effect.fn("McpHttpServer.saveScreenshot")(function* (
   return screenshotPath;
 });
 
+/**
+ * Tool input schemas are advertised through each schema's JSON codec, which
+ * offers `null` for every `Schema.optional` field, but Toolkit decodes with the
+ * schema itself and rejects that `null`. Decoding through the same codec makes
+ * a tool accept what it advertises.
+ */
+const decodeAsAdvertised = <Tools extends Record<string, Tool.Any>>(
+  toolkit: Toolkit.Toolkit<Tools>,
+): Toolkit.Toolkit<Tools> =>
+  // The clones keep each tool's id, name and decoded parameter type, so handlers still match.
+  Toolkit.make(
+    ...Object.values(toolkit.tools).map((tool) =>
+      tool.setParameters(Schema.toCodecJson(tool.parametersSchema)),
+    ),
+  ) as unknown as Toolkit.Toolkit<Tools>;
+
 const isPreviewAutomationError = Schema.is(PreviewAutomationError);
 
 const previewSnapshotFailure = <E>(cause: Cause.Cause<E>) => {
@@ -431,7 +447,7 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
   const saveServices = yield* Effect.context<
     ServerConfig.ServerConfig | FileSystem.FileSystem | Path.Path | Crypto.Crypto
   >();
-  const built = yield* PreviewSnapshotToolkit;
+  const built = yield* decodeAsAdvertised(PreviewSnapshotToolkit);
   const tool = PreviewSnapshotTool;
   yield* server.addTool({
     tool: new McpSchema.Tool({
@@ -604,7 +620,11 @@ const imageToolFailure =
  * `McpServer.toolkit` serializes every result as JSON text, which is the wrong
  * shape for a screenshot: the model needs image content.
  */
-const registerImageTool = <T extends Tool.Any, E, R>(
+const registerImageTool = Effect.fn("McpHttpServer.registerImageTool")(function* <
+  T extends Tool.Any,
+  E,
+  R,
+>(
   tool: T,
   handle: (payload: Tool.Parameters<T>) => Effect.Effect<{ readonly encodedResult: unknown }, E, R>,
   provide: (
@@ -616,78 +636,77 @@ const registerImageTool = <T extends Tool.Any, E, R>(
   >,
   operation: string,
   failureText: string | ((error: E) => string),
-) =>
-  Effect.gen(function* () {
-    const server = yield* McpServer.McpServer;
-    yield* server.addTool({
-      tool: new McpSchema.Tool({
-        name: tool.name,
-        description: Tool.getDescription(tool),
-        inputSchema: Tool.getJsonSchema(tool),
-        annotations: {
-          ...Context.getOption(tool.annotations, Tool.Title).pipe(
-            Option.map((title) => ({ title })),
-            Option.getOrUndefined,
-          ),
-          readOnlyHint: Context.get(tool.annotations, Tool.Readonly),
-          destructiveHint: Context.get(tool.annotations, Tool.Destructive),
-          idempotentHint: Context.get(tool.annotations, Tool.Idempotent),
-          openWorldHint: Context.get(tool.annotations, Tool.OpenWorld),
-        },
+) {
+  const server = yield* McpServer.McpServer;
+  yield* server.addTool({
+    tool: new McpSchema.Tool({
+      name: tool.name,
+      description: Tool.getDescription(tool),
+      inputSchema: Tool.getJsonSchema(tool),
+      annotations: {
+        ...Context.getOption(tool.annotations, Tool.Title).pipe(
+          Option.map((title) => ({ title })),
+          Option.getOrUndefined,
+        ),
+        readOnlyHint: Context.get(tool.annotations, Tool.Readonly),
+        destructiveHint: Context.get(tool.annotations, Tool.Destructive),
+        idempotentHint: Context.get(tool.annotations, Tool.Idempotent),
+        openWorldHint: Context.get(tool.annotations, Tool.OpenWorld),
+      },
+    }),
+    annotations: tool.annotations,
+    handle: (payload) =>
+      Effect.withFiber((fiber) => {
+        const invocation = Context.getUnsafe(
+          fiber.context,
+          McpInvocationContext.McpInvocationContext,
+        );
+        return provide(handle(payload as Tool.Parameters<T>)).pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.matchCauseEffect({
+            onFailure: imageToolFailure(tool.name, operation, failureText),
+            onSuccess: ({ encodedResult }) => {
+              const { screenshot, ...rest } = encodedResult as ImageToolResult;
+              const includeImage =
+                (payload as { readonly includeImage?: boolean } | undefined)?.includeImage !==
+                false;
+              const metadata = {
+                ...rest,
+                screenshot: {
+                  mimeType: screenshot.mimeType,
+                  width: screenshot.width,
+                  height: screenshot.height,
+                },
+              };
+              return Effect.succeed(
+                new McpSchema.CallToolResult({
+                  isError: false,
+                  structuredContent: metadata,
+                  content: [
+                    { type: "text", text: JSON.stringify(metadata) },
+                    ...(includeImage
+                      ? [
+                          {
+                            type: "image" as const,
+                            data: new Uint8Array(Buffer.from(screenshot.data, "base64")),
+                            mimeType: screenshot.mimeType,
+                          },
+                        ]
+                      : []),
+                  ],
+                }),
+              );
+            },
+          }),
+        );
       }),
-      annotations: tool.annotations,
-      handle: (payload) =>
-        Effect.withFiber((fiber) => {
-          const invocation = Context.getUnsafe(
-            fiber.context,
-            McpInvocationContext.McpInvocationContext,
-          );
-          return provide(handle(payload as Tool.Parameters<T>)).pipe(
-            Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
-            Effect.matchCauseEffect({
-              onFailure: imageToolFailure(tool.name, operation, failureText),
-              onSuccess: ({ encodedResult }) => {
-                const { screenshot, ...rest } = encodedResult as ImageToolResult;
-                const includeImage =
-                  (payload as { readonly includeImage?: boolean } | undefined)?.includeImage !==
-                  false;
-                const metadata = {
-                  ...rest,
-                  screenshot: {
-                    mimeType: screenshot.mimeType,
-                    width: screenshot.width,
-                    height: screenshot.height,
-                  },
-                };
-                return Effect.succeed(
-                  new McpSchema.CallToolResult({
-                    isError: false,
-                    structuredContent: metadata,
-                    content: [
-                      { type: "text", text: JSON.stringify(metadata) },
-                      ...(includeImage
-                        ? [
-                            {
-                              type: "image" as const,
-                              data: new Uint8Array(Buffer.from(screenshot.data, "base64")),
-                              mimeType: screenshot.mimeType,
-                            },
-                          ]
-                        : []),
-                    ],
-                  }),
-                );
-              },
-            }),
-          );
-        }),
-    });
   });
+});
 
 const registerDeviceScreenshot = Effect.fn("McpHttpServer.registerDeviceScreenshot")(function* () {
   const devices = yield* DeviceService.DeviceService;
   const threads = yield* ThreadManagementService.ThreadManagementService;
-  const built = yield* DeviceScreenshotToolkit;
+  const built = yield* decodeAsAdvertised(DeviceScreenshotToolkit);
   yield* registerImageTool(
     DeviceScreenshotTool,
     (payload) =>
@@ -709,7 +728,7 @@ const isOrchestratorMcpFailure = Schema.is(OrchestratorMcpFailure);
 const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(function* () {
   const htmlRender = yield* HtmlRender.HtmlRender;
   const threads = yield* ThreadManagementService.ThreadManagementService;
-  const built = yield* HtmlPreviewToolkit;
+  const built = yield* decodeAsAdvertised(HtmlPreviewToolkit);
   yield* registerImageTool(
     HtmlPreviewTool,
     (payload) =>
@@ -740,7 +759,9 @@ export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, 
   toolkit: Toolkit.Toolkit<Tools>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
 ) => {
-  const registration = McpServer.toolkit(toolkit);
+  const registration = Layer.effectDiscard(
+    McpServer.registerToolkit(decodeAsAdvertised(toolkit)),
+  ).pipe(Layer.provide(McpServer.McpServer.layer));
   // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off - the auth middleware provides it per request.
   const registered = registration as Layer.Layer<
     never,
@@ -753,7 +774,8 @@ export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, 
 const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, EX, RX>(
   register: Effect.Effect<A, E, R>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
-) => Layer.effectDiscard(register).pipe(Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)));
+) =>
+  Layer.effectDiscard(register).pipe(Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)));
 
 export const layerHtmlToolkit = Layer.mergeAll(
   toolkitRegistration(HtmlRenderToolkit, HtmlHandlers.layerRender),
@@ -792,7 +814,7 @@ const layerPreviewControlsRegistration = toolkitRegistration(
   PreviewControlsHandlers.layer,
 );
 
-export const layerEnvironmentToolkit = toolkitRegistration(
+const layerEnvironmentToolkit = toolkitRegistration(
   EnvironmentToolkit,
   EnvironmentHandlers.layer,
 ).pipe(Layer.provide(ThreadCommandExecutor.layer));

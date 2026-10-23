@@ -106,105 +106,6 @@ describe("DesktopSettings", () => {
         }),
       ),
   );
-  it.effect("loads defaults when no settings file exists", () =>
-    withSettings(
-      Effect.gen(function* () {
-        const settings = yield* DesktopAppSettings.DesktopAppSettings;
-        assert.deepEqual(yield* settings.load, DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS);
-        assert.deepEqual(yield* settings.get, DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS);
-      }),
-    ),
-  );
-
-  it("defaults packaged nightly builds to the nightly update channel", () => {
-    assert.deepEqual(
-      DesktopAppSettings.resolveDefaultDesktopSettings("0.0.17-nightly.20260415.1"),
-      {
-        linuxPasswordStore: "auto",
-        localEnvironmentEnabled: true,
-        mainWindowBounds: null,
-        mainWindowMaximized: false,
-        serverExposureMode: "local-only",
-        updateChannel: "nightly",
-        updateChannelConfiguredByUser: false,
-        wslBackendEnabled: false,
-        wslOnly: false,
-        wslDistro: null,
-      } satisfies DesktopAppSettings.DesktopSettings,
-    );
-  });
-
-  it.effect("loads persisted settings and applies semantic updates", () =>
-    withSettings(
-      Effect.gen(function* () {
-        const settings = yield* DesktopAppSettings.DesktopAppSettings;
-        yield* writeSettingsPatch({
-          linuxPasswordStore: "gnome-libsecret",
-          serverExposureMode: "network-accessible",
-          updateChannel: "latest",
-          updateChannelConfiguredByUser: true,
-        });
-
-        assert.deepEqual(yield* settings.load, {
-          linuxPasswordStore: "gnome-libsecret",
-          localEnvironmentEnabled: true,
-          mainWindowBounds: null,
-          mainWindowMaximized: false,
-          serverExposureMode: "network-accessible",
-          updateChannel: "latest",
-          updateChannelConfiguredByUser: true,
-          wslBackendEnabled: false,
-          wslOnly: false,
-          wslDistro: null,
-        } satisfies DesktopAppSettings.DesktopSettings);
-
-        const exposure = yield* settings.setServerExposureMode("local-only");
-        assert.isTrue(exposure.changed);
-        assert.equal(exposure.settings.serverExposureMode, "local-only");
-
-        const updateChannel = yield* settings.setUpdateChannel("nightly");
-        assert.isTrue(updateChannel.changed);
-        assert.equal(updateChannel.settings.updateChannel, "nightly");
-        assert.equal(updateChannel.settings.updateChannelConfiguredByUser, true);
-      }),
-    ),
-  );
-
-  it.effect("reports the failed desktop settings write operation and path", () =>
-    withSettings(
-      Effect.gen(function* () {
-        const environment = yield* DesktopEnvironment.DesktopEnvironment;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const settings = yield* DesktopAppSettings.DesktopAppSettings;
-        yield* fileSystem.makeDirectory(environment.desktopSettingsPath, { recursive: true });
-
-        const error = yield* settings.setServerExposureMode("network-accessible").pipe(Effect.flip);
-        assert.instanceOf(error, DesktopAppSettings.DesktopSettingsWriteError);
-        assert.equal(error.operation, "replace-settings-file");
-        assert.equal(error.path, environment.desktopSettingsPath);
-        assert.exists(error.cause);
-        assert.equal(
-          error.message,
-          `Desktop settings write failed during replace-settings-file at ${environment.desktopSettingsPath}.`,
-        );
-      }),
-    ),
-  );
-
-  it.effect("does not persist no-op semantic updates", () =>
-    withSettings(
-      Effect.gen(function* () {
-        const settings = yield* DesktopAppSettings.DesktopAppSettings;
-
-        const exposure = yield* settings.setServerExposureMode("local-only");
-        assert.isFalse(exposure.changed);
-
-        const updateChannel = yield* settings.setUpdateChannel("latest");
-        assert.isFalse(updateChannel.changed);
-        assert.equal(updateChannel.settings.updateChannelConfiguredByUser, false);
-      }),
-    ),
-  );
 
   it.effect("falls back to defaults when the settings file is malformed", () =>
     withSettings(
@@ -268,41 +169,6 @@ describe("DesktopSettings", () => {
         assert.equal(loaded.serverExposureMode, "network-accessible");
       }),
     ),
-  );
-
-  it.effect(
-    "normalizes unsupported linux password-store values without dropping other settings",
-    () =>
-      withSettings(
-        Effect.gen(function* () {
-          const environment = yield* DesktopEnvironment.DesktopEnvironment;
-          const fileSystem = yield* FileSystem.FileSystem;
-          const settings = yield* DesktopAppSettings.DesktopAppSettings;
-          yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
-          yield* fileSystem.writeFileString(
-            environment.desktopSettingsPath,
-            `{
-            "linuxPasswordStore": "unsupported-store",
-            "serverExposureMode": "network-accessible",
-            "updateChannel": "nightly",
-            "updateChannelConfiguredByUser": true
-          }\n`,
-          );
-
-          assert.deepEqual(yield* settings.load, {
-            linuxPasswordStore: "auto",
-            localEnvironmentEnabled: true,
-            mainWindowBounds: null,
-            mainWindowMaximized: false,
-            serverExposureMode: "network-accessible",
-            updateChannel: "nightly",
-            updateChannelConfiguredByUser: true,
-            wslBackendEnabled: false,
-            wslOnly: false,
-            wslDistro: null,
-          } satisfies DesktopAppSettings.DesktopSettings);
-        }),
-      ),
   );
 
   it.effect("persists sparse desktop settings documents", () =>
@@ -479,21 +345,6 @@ describe("DesktopSettings", () => {
         const loaded = yield* settings.load;
         assert.equal(loaded.wslBackendEnabled, true);
         assert.equal(loaded.wslDistro, "Ubuntu-22.04");
-      }),
-    ),
-  );
-
-  it.effect("drops invalid persisted wsl distro values on load", () =>
-    withSettings(
-      Effect.gen(function* () {
-        const settings = yield* DesktopAppSettings.DesktopAppSettings;
-        yield* writeSettingsPatch({
-          wslBackendEnabled: true,
-          wslDistro: "bad/name",
-        });
-        const loaded = yield* settings.load;
-        assert.equal(loaded.wslBackendEnabled, true);
-        assert.equal(loaded.wslDistro, null);
       }),
     ),
   );

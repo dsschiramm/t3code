@@ -14,6 +14,7 @@ import {
   ExecutionEnvironmentDescriptor,
 } from "@t3tools/contracts";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import * as Config from "effect/Config";
@@ -58,12 +59,16 @@ export class NoRunningServerError extends Schema.TaggedError<NoRunningServerErro
   "NoRunningServerError",
   {
     checkedStatePaths: Schema.Array(Schema.String),
+    inLinkedWorktree: Schema.Boolean,
   },
 ) {
   override get message(): string {
     return [
       "No running T3 Code server found.",
       ...this.checkedStatePaths.map((statePath) => `  checked ${statePath}`),
+      ...(this.inLinkedWorktree
+        ? ["In a linked worktree, pass --base-dir to pair with a server outside it."]
+        : []),
       "Start one with `npx t3 serve`.",
     ].join("\n");
   }
@@ -103,10 +108,12 @@ type EnvironmentProbeResult =
   | { readonly _tag: "unreachable" }
   | { readonly _tag: "not-a-t3-server" };
 
-const probeEnvironmentDescriptor = (
+const probeEnvironmentDescriptor: (
   baseUrl: string,
-): Effect.Effect<EnvironmentProbeResult, never, HttpClient.HttpClient> =>
-  Effect.gen(function* () {
+) => Effect.Effect<EnvironmentProbeResult, never, HttpClient.HttpClient> = Effect.fn(
+  "pair.probeEnvironmentDescriptor",
+)(
+  function* (baseUrl: string) {
     const client = yield* HttpClient.HttpClient;
     const request = HttpClientRequest.get(new URL(WELL_KNOWN_ENVIRONMENT_PATH, baseUrl).toString());
     const response = yield* client.execute(request).pipe(
@@ -123,7 +130,9 @@ const probeEnvironmentDescriptor = (
       Effect.mapError(() => ({ _tag: "not-a-t3-server" }) as const),
     );
     return { _tag: "descriptor", descriptor } as const;
-  }).pipe(Effect.catch((outcome) => Effect.succeed(outcome)));
+  },
+  Effect.catch((outcome) => Effect.succeed(outcome)),
+);
 
 interface DiscoveredPairTarget {
   readonly baseDir: string;
@@ -136,18 +145,22 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
   explicitBaseDir: string | undefined,
 ) {
   const bases: Array<string> = [];
+  let inLinkedWorktree = false;
   if (explicitBaseDir !== undefined && explicitBaseDir.trim().length > 0) {
     bases.push(yield* resolveBaseDir(explicitBaseDir));
   } else {
-    // Same precedence as dev-runner: inside a linked worktree its own `.t3`
-    // outranks the shared home, so `t3 pair` in a worktree pairs with the dev
-    // server under test rather than the daily-driver install.
-    const worktreeHome = yield* resolveWorktreeT3Home(process.cwd());
+    // Same precedence as dev-runner: inside a linked worktree only its own
+    // `.t3` counts. Minting opens the target database with this checkout's
+    // migrations, so falling back to the shared home could migrate the live
+    // install with unreleased schema.
+    const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcess.WorkingDirectory);
     if (worktreeHome !== undefined) {
       bases.push(worktreeHome);
+      inLinkedWorktree = true;
+    } else {
+      const envHome = yield* Config.String("T3CODE_HOME").pipe(Config.option);
+      bases.push(yield* resolveBaseDir(Option.getOrUndefined(envHome)));
     }
-    const envHome = yield* Config.String("T3CODE_HOME").pipe(Config.option);
-    bases.push(yield* resolveBaseDir(Option.getOrUndefined(envHome)));
   }
 
   const checkedStatePaths: Array<string> = [];
@@ -182,7 +195,7 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
       } satisfies DiscoveredPairTarget;
     }
   }
-  return yield* new NoRunningServerError({ checkedStatePaths });
+  return yield* new NoRunningServerError({ checkedStatePaths, inLinkedWorktree });
 });
 
 /**

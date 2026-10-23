@@ -35,7 +35,7 @@ import { useEffect, useRef, useState } from "react";
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
-import { useCompleteOnboarding } from "../../onboarding/firstRun";
+import { completeOnboarding } from "../../onboarding/firstRun";
 import {
   groupOnboardingProjects,
   partitionOnboardingProjects,
@@ -107,7 +107,6 @@ export function WelcomeWizard({
   readonly resumeEnvironmentId?: EnvironmentId | undefined;
   readonly onDone: (projectRef?: ScopedProjectRef) => void | Promise<void>;
 }) {
-  const completeOnboarding = useCompleteOnboarding();
   const [step, setStep] = useState<WizardStep>(resumeEnvironmentId ? "agents" : "connection");
   const { environments } = useEnvironments();
   const [selection, setSelection] = useState<ReadonlySet<EnvironmentId> | null>(null);
@@ -209,11 +208,17 @@ export function WelcomeWizard({
   };
 
   return (
-    <Dialog open disablePointerDismissal onOpenChange={(_, event) => event.cancel()}>
+    <Dialog
+      open
+      disablePointerDismissal
+      onOpenChange={(_, event) => {
+        event.cancel();
+        if (event.reason === "close-press" && !isImporting) void finish();
+      }}
+    >
       <WizardPopup
         size="wide"
         bottomStickOnMobile={false}
-        showCloseButton={false}
         initialFocus={() => document.getElementById("onboarding-pairing-url") ?? true}
       >
         <WizardHeader
@@ -351,6 +356,11 @@ function ConnectionStep({
                 {environment.displayUrl ? (
                   <span className="mt-0.5 block text-xs break-all text-muted-foreground">
                     {environment.displayUrl}
+                  </span>
+                ) : null}
+                {environment.connection.phase === "unsupported" && environment.connection.error ? (
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {environment.connection.error}
                   </span>
                 ) : null}
               </span>

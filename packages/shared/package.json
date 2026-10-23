@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./changedFileKind": {
+      "types": "./src/changedFileKind.ts",
+      "import": "./src/changedFileKind.ts"
+    },
     "./githubMarkdownLinks": {
       "types": "./src/githubMarkdownLinks.ts",
       "import": "./src/githubMarkdownLinks.ts"
@@ -462,10 +466,18 @@
     "./PtyAdapter": {
       "types": "./src/PtyAdapter.ts",
       "import": "./src/PtyAdapter.ts"
+    },
+    "./markdownMath": {
+      "types": "./src/markdownMath.ts",
+      "import": "./src/markdownMath.ts"
+    },
+    "./cloneUrl": {
+      "types": "./src/cloneUrl.ts",
+      "import": "./src/cloneUrl.ts"
     }
   },
   "scripts": {
-    "typecheck": "tsc-rs --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
@@ -474,12 +486,14 @@
     "@t3tools/contracts": "workspace:*",
     "effect": "catalog:",
     "mdast-util-directive": "catalog:",
+    "mdast-util-to-hast": "^13.2.1",
     "micromark-extension-directive": "catalog:",
     "micromark-util-character": "catalog:",
     "rehype-raw": "catalog:",
     "rehype-sanitize": "catalog:",
     "remark-breaks": "catalog:",
     "remark-gfm": "catalog:",
+    "remark-math": "6.0.0",
     "remark-parse": "catalog:",
     "remark-rehype": "catalog:",
     "unified": "catalog:",
@@ -488,6 +502,7 @@
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
+    "@types/mdast": "^4.0.4",
     "@types/node": "catalog:",
     "micromark-util-types": "catalog:",
     "vite-plus": "catalog:"

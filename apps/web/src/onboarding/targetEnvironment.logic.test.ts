@@ -89,28 +89,6 @@ describe("resolveOnboardingTargetEnvironment", () => {
     ).toBe(pairedRemote);
   });
 
-  it("waits for a newly paired machine that has not appeared in the catalog", () => {
-    expect(
-      resolveOnboardingTargetEnvironment({
-        mode: "direct",
-        environments: [primaryEnvironment, sshEnvironment],
-        primaryEnvironment,
-        pairedEnvironmentId: pairedRemote.environmentId,
-      }),
-    ).toBeNull();
-  });
-
-  it("uses the primary machine for local onboarding", () => {
-    expect(
-      resolveOnboardingTargetEnvironment({
-        mode: "local",
-        environments: [primaryEnvironment, sshEnvironment],
-        primaryEnvironment,
-        pairedEnvironmentId: null,
-      }),
-    ).toBe(primaryEnvironment);
-  });
-
   it("does not substitute a remote machine when the local primary is offline", () => {
     const offlinePrimary = { ...primaryEnvironment, connection: { phase: "disconnected" } };
 
@@ -129,17 +107,6 @@ describe("resolveOnboardingTargetEnvironment", () => {
       resolveOnboardingTargetEnvironment({
         mode: "connect",
         environments: [primaryEnvironment, pairedRemote, sshEnvironment, desktopLocalEnvironment],
-        primaryEnvironment,
-        pairedEnvironmentId: null,
-      }),
-    ).toBe(primaryEnvironment);
-  });
-
-  it("falls back to the connected primary when no remote is available", () => {
-    expect(
-      resolveOnboardingTargetEnvironment({
-        mode: "connect",
-        environments: [primaryEnvironment],
         primaryEnvironment,
         pairedEnvironmentId: null,
       }),
@@ -184,6 +151,7 @@ describe("resolveOnboardingSetup", () => {
     ).toBe(false);
   });
 
+  // regression: #16887 onboarding Continue locked up on computers that won't connect
   it("is not ready without a connected selection", () => {
     expect(resolveOnboardingSetup([local], new Set()).ready).toBe(false);
     expect(

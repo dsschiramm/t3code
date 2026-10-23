@@ -182,6 +182,10 @@ export function connectionRouteAddress(route: ConnectionRoute): string | null {
   return routeHttpBaseUrl(route);
 }
 
+/** Learned routes alone must not make unsupported environments manually retryable. */
+export const hasSavedBearerRoute = (entry: ConnectionCatalogEntry) =>
+  connectionRoutes(entry).some((r) => !isLearned(r) && r.target._tag === "BearerConnectionTarget");
+
 /**
  * The routes after the server reports where it listens. Each newly reported
  * address becomes a learned route that authenticates the same way as the route

@@ -51,6 +51,7 @@ export class ElectronApp extends Context.Service<
      */
     readonly systemLocale: Effect.Effect<string>;
     readonly whenReady: Effect.Effect<void, ElectronAppWhenReadyError>;
+    readonly requestSingleInstanceLock: Effect.Effect<boolean>;
     readonly quit: Effect.Effect<void>;
     /** Returns false when another instance of this app already holds the lock. */
     readonly requestSingleInstanceLock: Effect.Effect<boolean>;
@@ -139,6 +140,7 @@ export const make = ElectronApp.of({
       catch: (cause) => new ElectronAppWhenReadyError({ isPackaged, cause }),
     });
   }),
+  requestSingleInstanceLock: Effect.sync(() => Electron.app.requestSingleInstanceLock()),
   quit: Effect.sync(() => {
     Electron.app.quit();
   }),

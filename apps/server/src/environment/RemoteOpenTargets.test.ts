@@ -19,11 +19,19 @@ const layerNet = (input: { readonly ipv4: boolean; readonly ipv6: boolean }) =>
 const resolveTargets = (input: {
   readonly sshd: { readonly ipv4: boolean; readonly ipv6: boolean };
   readonly hostname: string;
-}) =>
-  Effect.flatMap(RemoteOpenTargets.RemoteOpenTargets, (service) => service.resolveTargets()).pipe(
+  readonly username?: string | null;
+}) => {
+  const resolve = Effect.flatMap(RemoteOpenTargets.RemoteOpenTargets, (service) =>
+    service.resolveTargets(),
+  ).pipe(
     Effect.provideService(HostProcess.Hostname, input.hostname),
     Effect.provide(RemoteOpenTargets.layer.pipe(Layer.provide(layerNet(input.sshd)))),
   );
+
+  return input.username === undefined
+    ? resolve
+    : resolve.pipe(Effect.provideService(HostProcess.Username, input.username));
+};
 
 describe("RemoteOpenTargets", () => {
   it.effect("advertises nothing when no sshd accepts", () =>
@@ -31,6 +39,7 @@ describe("RemoteOpenTargets", () => {
       const targets = yield* resolveTargets({
         sshd: { ipv4: false, ipv6: false },
         hostname: "bb-1",
+        username: "t3-user",
       });
       expect(targets).toEqual([]);
     }),
@@ -41,8 +50,9 @@ describe("RemoteOpenTargets", () => {
       const targets = yield* resolveTargets({
         sshd: { ipv4: true, ipv6: true },
         hostname: "bb-1",
+        username: "t3-user",
       });
-      expect(targets).toEqual([{ kind: "mdns", host: "bb-1.local" }]);
+      expect(targets).toEqual([{ kind: "mdns", host: "bb-1.local", username: "t3-user" }]);
     }),
   );
 
@@ -51,6 +61,7 @@ describe("RemoteOpenTargets", () => {
       const targets = yield* resolveTargets({
         sshd: { ipv4: false, ipv6: true },
         hostname: "bb-1",
+        username: null,
       });
       expect(targets).toEqual([{ kind: "mdns", host: "bb-1.local" }]);
     }),
@@ -61,6 +72,7 @@ describe("RemoteOpenTargets", () => {
       const targets = yield* resolveTargets({
         sshd: { ipv4: true, ipv6: true },
         hostname: "bb-1.example.com",
+        username: null,
       });
       expect(targets).toEqual([{ kind: "mdns", host: "bb-1.local" }]);
     }),

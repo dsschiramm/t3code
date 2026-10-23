@@ -14,12 +14,9 @@ import { DPOP_REPLAY_MARKER_PREFIX } from "./dpop.ts";
 const REPLAY_MARKER_PREFIXES = [DPOP_REPLAY_MARKER_PREFIX];
 
 /**
- * How long a replay marker stays on disk. A marker only matters while its proof
- * can pass the time check (about 5 minutes for DPoP). After
- * that, the time check rejects a replay by itself. The sweep and the time check
- * both use the wall clock, so a pruned marker can let a replay through only if
- * the clock moves back by almost a day, or if the filesystem stamps mtimes almost
- * a day behind. Markers are files, so a restart does not reset them.
+ * A marker only matters while its proof can pass the time check (about 10 minutes
+ * for DPoP). After that, the time check rejects a replay by
+ * itself.
  */
 export const REPLAY_MARKER_MAX_AGE = Duration.days(1);
 
