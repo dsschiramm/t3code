@@ -753,8 +753,7 @@ export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, 
 const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, EX, RX>(
   register: Effect.Effect<A, E, R>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
-) =>
-  Layer.effectDiscard(register).pipe(Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)));
+) => Layer.effectDiscard(register).pipe(Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)));
 
 export const layerHtmlToolkit = Layer.mergeAll(
   toolkitRegistration(HtmlRenderToolkit, HtmlHandlers.layerRender),

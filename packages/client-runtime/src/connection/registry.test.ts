@@ -1641,48 +1641,50 @@ describe("EnvironmentRegistry routes", () => {
     }),
   );
 
-  it.effect("revokes pull request routing trust when a route is added but keeps it on reorder", () =>
-    Effect.gen(function* () {
-      const harness = yield* makeHarness(
-        [RELAY_TARGET],
-        [
-          new BearerConnectionProfile({
-            connectionId: RELAY_TARGET.connectionId,
-            environmentId: RELAY_TARGET.environmentId,
-            label: RELAY_TARGET.label,
-            httpBaseUrl: "https://remote.example.test",
-            wsBaseUrl: "wss://remote.example.test",
-          }),
-        ],
-        [[RELAY_TARGET.connectionId, BEARER_CREDENTIAL]],
-      );
-      let stored: ReadonlyArray<StoredPullRequestRoutingPermission> = [];
-      const permissions = yield* makePullRequestRoutingPermissions({
-        read: Effect.sync(() => stored),
-        write: (next) => Effect.sync(() => void (stored = next)),
-      });
-      yield* Effect.gen(function* () {
-        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-        const current = () =>
-          SubscriptionRef.get(registry.entries).pipe(
-            Effect.map((entries) => entries.get(RELAY_TARGET.environmentId)!),
-          );
-        yield* permissions.set(yield* current(), "read");
-        yield* registry.register(lanRegistration());
-        expect(yield* permissions.get(yield* current())).toBe("off");
+  it.effect(
+    "revokes pull request routing trust when a route is added but keeps it on reorder",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness(
+          [RELAY_TARGET],
+          [
+            new BearerConnectionProfile({
+              connectionId: RELAY_TARGET.connectionId,
+              environmentId: RELAY_TARGET.environmentId,
+              label: RELAY_TARGET.label,
+              httpBaseUrl: "https://remote.example.test",
+              wsBaseUrl: "wss://remote.example.test",
+            }),
+          ],
+          [[RELAY_TARGET.connectionId, BEARER_CREDENTIAL]],
+        );
+        let stored: ReadonlyArray<StoredPullRequestRoutingPermission> = [];
+        const permissions = yield* makePullRequestRoutingPermissions({
+          read: Effect.sync(() => stored),
+          write: (next) => Effect.sync(() => void (stored = next)),
+        });
+        yield* Effect.gen(function* () {
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          const current = () =>
+            SubscriptionRef.get(registry.entries).pipe(
+              Effect.map((entries) => entries.get(RELAY_TARGET.environmentId)!),
+            );
+          yield* permissions.set(yield* current(), "read");
+          yield* registry.register(lanRegistration());
+          expect(yield* permissions.get(yield* current())).toBe("off");
 
-        yield* permissions.set(yield* current(), "read");
-        yield* registry.reorderRoutes(LAN_TARGET.environmentId, [
-          RELAY_TARGET.connectionId,
-          LAN_TARGET.connectionId,
-        ]);
-        expect(yield* permissions.get(yield* current())).toBe("read");
-      }).pipe(
-        Effect.provide(harness.layer),
-        Effect.provideService(PullRequestRoutingPermissions, permissions),
-        Effect.scoped,
-      );
-    }),
+          yield* permissions.set(yield* current(), "read");
+          yield* registry.reorderRoutes(LAN_TARGET.environmentId, [
+            RELAY_TARGET.connectionId,
+            LAN_TARGET.connectionId,
+          ]);
+          expect(yield* permissions.get(yield* current())).toBe("read");
+        }).pipe(
+          Effect.provide(harness.layer),
+          Effect.provideService(PullRequestRoutingPermissions, permissions),
+          Effect.scoped,
+        );
+      }),
   );
 
   it.effect("loads saved routes grouped by environment, in saved order", () =>

@@ -39,10 +39,7 @@ const MAX_SESSION_STATE_TIMEOUT_MS = 60_000;
 
 export const fetchEnvironmentSessionState = Effect.fn(
   "clientRuntime.state.fetchEnvironmentSessionState",
-)(function* (input: {
-  readonly prepared: PreparedConnection;
-  readonly timeoutMs?: number;
-}) {
+)(function* (input: { readonly prepared: PreparedConnection; readonly timeoutMs?: number }) {
   const request = (
     timeoutMs: number,
   ): Effect.Effect<AuthSessionState, RemoteEnvironmentRequestError, HttpClient.HttpClient> =>
