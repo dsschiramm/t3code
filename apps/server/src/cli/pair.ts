@@ -12,6 +12,7 @@ import {
   type AuthEnvironmentScope,
   AuthStandardClientScopes,
   ExecutionEnvironmentDescriptor,
+  ORCHESTRATION_PROTOCOL_VERSION,
 } from "@t3tools/contracts";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -51,8 +52,7 @@ const PAIR_PROBE_TIMEOUT = Duration.millis(2_500);
 
 export type PairStateVariant = "userdata" | "dev";
 
-// deriveServerPaths only checks devUrl for undefined-ness when picking the
-// dev-vs-userdata state directory; the value itself is not used.
+// Only devUrl's presence selects dev state; its value is unused.
 const DEV_VARIANT_PLACEHOLDER_URL = new URL("http://localhost");
 
 export class NoRunningServerError extends Schema.TaggedError<NoRunningServerError>()(
@@ -74,9 +74,24 @@ export class NoRunningServerError extends Schema.TaggedError<NoRunningServerErro
   }
 }
 
+export class IncompatibleServerProtocolError extends Schema.TaggedError<IncompatibleServerProtocolError>()(
+  "IncompatibleServerProtocolError",
+  { serverVersion: Schema.String, serverProtocolVersion: Schema.Number },
+) {
+  override get message(): string {
+    return [
+      `The running T3 Code server (${this.serverVersion}) speaks orchestration protocol ${String(this.serverProtocolVersion)}, but this CLI speaks protocol ${String(ORCHESTRATION_PROTOCOL_VERSION)}.`,
+      `Pair with the matching CLI instead: \`npx t3@${this.serverVersion} pair\`.`,
+    ].join("\n");
+  }
+}
+
 /** The URL a browser or phone should pair through. */
 export const resolveDirectPairingBaseUrl = (state: PersistedServerRuntimeState): string =>
-  state.devUrl ?? resolveHeadlessConnectionString(state.host, state.port);
+  state.devUrl ??
+  resolveHeadlessConnectionString(state.host, state.port, {
+    privateNetworkOnly: state.privateNetworkOnly,
+  });
 
 const formatPairOutput = (input: {
   readonly serverLabel: string;
@@ -120,8 +135,7 @@ const probeEnvironmentDescriptor: (
       Effect.timeout(PAIR_PROBE_TIMEOUT),
       Effect.mapError(() => ({ _tag: "unreachable" }) as const),
     );
-    // Bad-gateway family means a reverse proxy answered for a backend that is
-    // gone — a stale mapping, not a live occupant.
+    // Gateway errors identify stale proxy mappings that pairing may repair.
     if (response.status === 502 || response.status === 503 || response.status === 504) {
       return { _tag: "unreachable" } as const;
     }
@@ -177,9 +191,7 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
       if (Option.isNone(state)) {
         continue;
       }
-      // The pid check guards against a dead server's state file whose port
-      // was since reused by a different server: pairing would then mint a
-      // token in the old database while the QR code points at the new server.
+      // A dead server's port may be reused; do not mint tokens in its old database for another server.
       if (!isProcessAlive(state.value.pid)) {
         continue;
       }
@@ -198,19 +210,13 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
   return yield* new NoRunningServerError({ checkedStatePaths, inLinkedWorktree });
 });
 
-/**
- * Built by hand rather than through `resolveServerConfig` to keep the dev-vs-userdata choice
- * pinned to where the runtime state was actually found, independent of ambient environment
- * variables.
- */
+/** Use the discovered state directory, independent of ambient config variables. */
 const makePairServerConfig = Effect.fn(function* (input: {
   readonly target: DiscoveredPairTarget;
   readonly logLevel: ServerConfig.ServerConfig["Service"]["logLevel"];
 }) {
   const { baseDir, variant, state } = input.target;
-  // The state-dir variant does not imply dev-ness: a worktree dev server uses
-  // an explicit home and therefore lands in `userdata`. The recorded devUrl is
-  // what actually marks a dev server.
+  // Worktree dev servers can use `userdata`; only the recorded devUrl marks a dev server.
   const devUrl = state.devUrl !== undefined ? new URL(state.devUrl) : undefined;
   const derivedPaths = yield* ServerConfig.deriveServerPaths(
     baseDir,
@@ -305,6 +311,16 @@ export const pairCommand = Command.make("pair", {
       const logLevel = Option.getOrElse(cliLogLevel, () => "Warn" as const);
 
       const target = yield* discoverPairTarget(Option.getOrUndefined(flags.baseDir));
+      // Each protocol keeps auth in its own database, so a token minted here
+      // for another protocol's server would never be accepted by it. Refuse
+      // before any local layer opens (and migrates) that database.
+      const serverProtocolVersion = target.descriptor.orchestrationProtocolVersion ?? 1;
+      if (serverProtocolVersion !== ORCHESTRATION_PROTOCOL_VERSION) {
+        return yield* new IncompatibleServerProtocolError({
+          serverVersion: target.descriptor.serverVersion,
+          serverProtocolVersion,
+        });
+      }
 
       const notes: Array<string> = [];
       const pairingBaseUrl = resolveDirectPairingBaseUrl(target.state);
@@ -312,6 +328,8 @@ export const pairCommand = Command.make("pair", {
         notes.push(
           "This URL is only reachable from this machine. Restart the server with a reachable --host.",
         );
+      } else if (target.state.privateNetworkOnly) {
+        notes.push("This URL works only from this machine's local network.");
       }
       if (target.variant === "dev" && target.state.devUrl === undefined) {
         notes.push(

@@ -7,7 +7,7 @@ import {
   type ConnectionCatalogEntry,
   type ConnectionRoute,
 } from "./catalog.ts";
-import { gitHubRoutingConnectionKey } from "./githubRoutingPermissions.ts";
+import { pullRequestRoutingConnectionKey } from "./pullRequestRoutingPermissions.ts";
 import { BearerConnectionTarget } from "./model.ts";
 import {
   connectionRouteId,
@@ -315,7 +315,7 @@ describe("learned routes", () => {
     expect(ids(routesAfterRemoving(overLan, "public"))).toHaveLength(2);
   });
 
-  it("keeps GitHub routing trust when a route is learned", () => {
+  it("keeps pull request routing trust when a route is learned", () => {
     const learned = mergeLearnedRoutes({
       entry: publicOnly,
       activeRoute: PUBLIC,
@@ -328,7 +328,9 @@ describe("learned routes", () => {
       profile: learned[0]!.profile,
       alternateRoutes: learned.slice(1),
     };
-    expect(gitHubRoutingConnectionKey(withLearned)).toBe(gitHubRoutingConnectionKey(publicOnly));
+    expect(pullRequestRoutingConnectionKey(withLearned)).toBe(
+      pullRequestRoutingConnectionKey(publicOnly),
+    );
   });
 
   it("keeps borrowing the paired token when learning over a learned route", () => {
