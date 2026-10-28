@@ -17,7 +17,7 @@ import {
   type EnvironmentPresentation,
   type EnvironmentServerConfig,
 } from "../connection/presentation.ts";
-import type { EnvironmentCatalogState } from "./connections.ts";
+import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 
 function mapsEqual<K, V>(left: ReadonlyMap<K, V>, right: ReadonlyMap<K, V>): boolean {
   if (left.size !== right.size) {
