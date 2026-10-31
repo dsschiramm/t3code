@@ -1,9 +1,7 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 
@@ -160,6 +158,34 @@ describe("DesktopServerExposure", () => {
       }),
     ),
   );
+
+  it.effect("advertises the current LAN address after the network changes", () => {
+    const networkInterfaces: Record<
+      string,
+      readonly DesktopNetworkInterfaces.DesktopNetworkInterfaceInfo[] | undefined
+    > = { ...lanNetworkInterfaces };
+
+    return withHarness(
+      networkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+        yield* serverExposure.setMode("network-accessible");
+
+        networkInterfaces.en0 = [{ address: "10.0.0.5", family: "IPv4", internal: false }];
+
+        const state = yield* serverExposure.getState;
+        assert.equal(state.advertisedHost, "10.0.0.5");
+        assert.equal(state.endpointUrl, "http://10.0.0.5:4173");
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        assert.deepEqual(
+          endpoints.map((endpoint) => endpoint.httpBaseUrl),
+          ["http://127.0.0.1:4173/", "http://10.0.0.5:4173/"],
+        );
+        assert.equal((yield* serverExposure.backendConfig).bindHost, "0.0.0.0");
+      }),
+    );
+  });
 
   it.effect("preserves persistence request context and the settings failure chain", () => {
     const diskFailure = new Error("disk exploded");

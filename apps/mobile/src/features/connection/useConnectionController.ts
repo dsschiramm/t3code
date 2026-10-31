@@ -1,9 +1,8 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useCallback } from "react";
 
 import { environmentCatalog } from "../../connection/catalog";
 import {
-  connectPairingUrl as connectPairingUrlAtom,
+  connectPairingUrlAtom,
   updateBearerConnection,
 } from "../../connection/onboarding";
 import { useWorkspaceEnvironments } from "../../state/workspace";
@@ -22,39 +21,26 @@ export function useConnectionController() {
     "environment toggle",
   );
 
-  const connectPairingUrl = useCallback(
-    (pairingUrl: string, expectedEnvironmentId?: EnvironmentId) =>
-      connectPairingUrlMutation({
-        pairingUrl,
-        ...(expectedEnvironmentId === undefined ? {} : { expectedEnvironmentId }),
-      }),
-    [connectPairingUrlMutation],
-  );
-  const removeEnvironment = useCallback(
-    (environmentId: EnvironmentId) => removeEnvironmentMutation(environmentId),
-    [removeEnvironmentMutation],
-  );
-  const retryEnvironment = useCallback(
-    (environmentId: EnvironmentId) => retryEnvironmentMutation(environmentId),
-    [retryEnvironmentMutation],
-  );
-  const setEnvironmentEnabled = useCallback(
-    (environmentId: EnvironmentId, enabled: boolean) =>
-      setEnvironmentEnabledMutation({ environmentId, enabled }),
-    [setEnvironmentEnabledMutation],
-  );
-  const updateEnvironment = useCallback(
-    (
-      environmentId: EnvironmentId,
-      updates: { readonly label: string; readonly displayUrl: string },
-    ) =>
-      updateBearer({
-        environmentId,
-        label: updates.label,
-        httpBaseUrl: updates.displayUrl,
-      }),
-    [updateBearer],
-  );
+  const connectPairingUrl = (pairingUrl: string, expectedEnvironmentId?: EnvironmentId) =>
+    connectPairingUrlMutation({
+      pairingUrl,
+      ...(expectedEnvironmentId === undefined ? {} : { expectedEnvironmentId }),
+    });
+  const removeEnvironment = (environmentId: EnvironmentId) =>
+    removeEnvironmentMutation(environmentId);
+  const retryEnvironment = (environmentId: EnvironmentId) =>
+    retryEnvironmentMutation(environmentId);
+  const setEnvironmentEnabled = (environmentId: EnvironmentId, enabled: boolean) =>
+    setEnvironmentEnabledMutation({ environmentId, enabled });
+  const updateEnvironment = (
+    environmentId: EnvironmentId,
+    updates: { readonly label: string; readonly displayUrl: string },
+  ) =>
+    updateBearer({
+      environmentId,
+      label: updates.label,
+      httpBaseUrl: updates.displayUrl,
+    });
 
   return {
     connectedEnvironments,
