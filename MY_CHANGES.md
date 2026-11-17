@@ -46,6 +46,18 @@ Ao fazer merge da main: manter esses itens removidos.
   - Telemetria: `telemetry/ProviderUsageAnalytics.ts` é só tipos + `ProviderTurnAnalytics` no-op, para os call sites do orchestration-v2 ficarem iguais aos da main. `getAgentAwarenessSnapshot` removido do `ProjectionStore`/`Orchestrator`/`ThreadManagementService`; `ShellStream` tem `turnItemCanChangeUserWait` inline.
   - Widgets mobile `AgentActivityWidget`/`publishAgentActivityWidget`/`agentActivityWidgetTimeline` (relay): remover.
 
+## Como fazer o merge da main
+
+Faça o merge com frequência (a cada 1 ou 2 semanas): quanto menor o intervalo, menos conflitos.
+
+1. `node scripts/merge-main.mjs` roda `git merge --no-commit main`, remove tudo que a dev mantém removido (lista `REMOVED` no script), mantém o `pnpm-lock.yaml` da dev e lista o que sobrou.
+2. Resolver os arquivos listados à mão, seguindo "O que manter removido" e os padrões abaixo.
+3. `pnpm install --no-frozen-lockfile --ignore-scripts`, depois `git add -A`.
+4. `git commit`. O hook roda `vp lint` e knip nos arquivos staged; falhas novas vêm quase sempre de import ou export que só código removido usava.
+5. Registrar o merge em "Histórico de merges da main".
+
+Configuração local já aplicada: `merge.renameLimit=20000` (o rename detection desistia com muitos arquivos) e `rerere.enabled=true` (reaproveita resoluções repetidas). Pastas removidas da dev: `.github`, `.claude`, `.cursor`, `.agents`, `.devcontainer`; `.repos/` fica no `.gitignore` (usar `vpr sync:repos`). `ci-changes.cjs` mora em `scripts/lib/`. Atualize `REMOVED` no script quando remover mais áreas.
+
 ## Regras de merge
 
 - Arquivos `.md` e docs: usar a versão da `main`.
