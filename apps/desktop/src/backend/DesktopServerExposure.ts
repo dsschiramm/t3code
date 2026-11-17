@@ -17,6 +17,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
+import * as DesktopManagedPolicy from "../app/DesktopManagedPolicy.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopNetworkInterfaces from "./DesktopNetworkInterfaces.ts";
@@ -400,6 +401,16 @@ export const make = Effect.gen(function* () {
 
   const readNetworkInterfaces = networkInterfaces.read;
 
+  // The server refuses to bind wider than the policy's clients allow, so network access
+  // saved before the policy would keep the backend from starting. The backend runs without it;
+  // the saved choice stays for when the policy allows it.
+  const remoteAllowed = yield* (yield* DesktopManagedPolicy.DesktopManagedPolicy).read.pipe(
+    Effect.map((found) => found?.document.limits?.clients?.includes("remote") ?? true),
+    Effect.orElseSucceed(() => false),
+  );
+  const withinPolicy = (settings: DesktopAppSettings.DesktopSettings) =>
+    remoteAllowed ? settings : { ...settings, serverExposureMode: "local-only" as const };
+
   const readCurrentState = (currentNetworkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces) =>
     Ref.get(stateRef).pipe(
       Effect.map((state) =>
@@ -419,7 +430,8 @@ export const make = Effect.gen(function* () {
       const settings = yield* desktopSettings.get;
       const currentNetworkInterfaces = yield* readNetworkInterfaces;
       const resolved = resolveRuntimeState({
-        requestedMode: settings.serverExposureMode,
+        requestedMode: withinPolicy(settings).serverExposureMode,
+        settings: withinPolicy(settings),
         port,
         networkInterfaces: currentNetworkInterfaces,
         advertisedHostOverride: config.desktopLanHostOverride,
@@ -434,9 +446,15 @@ export const make = Effect.gen(function* () {
   ) {
     yield* Effect.annotateCurrentSpan({ mode });
     const previous = yield* Ref.get(stateRef);
+    const currentSettings = yield* desktopSettings.get;
+    const nextSettings = {
+      ...currentSettings,
+      serverExposureMode: mode,
+    };
     const currentNetworkInterfaces = yield* readNetworkInterfaces;
     const resolved = resolveRuntimeState({
-      requestedMode: mode,
+      requestedMode: withinPolicy(nextSettings).serverExposureMode,
+      settings: withinPolicy(nextSettings),
       port: previous.port,
       networkInterfaces: currentNetworkInterfaces,
       advertisedHostOverride: config.desktopLanHostOverride,

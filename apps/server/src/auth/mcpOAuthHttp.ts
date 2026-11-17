@@ -2,6 +2,8 @@ import {
   AuthMcpApprovalError,
   AuthMcpAuthorizationRequest,
   AuthMcpClientAccess,
+  AuthMcpClientRegistration,
+  AuthMcpRegistrationError,
   EnvironmentHttpApi,
   mcpClientScopes,
 } from "@t3tools/contracts";
@@ -35,6 +37,10 @@ const noStore = HttpEffect.appendPreResponseHandler((_request, response) =>
 
 const requestUrls = Effect.map(HttpServerRequest.HttpServerRequest, McpOAuth.requestUrls);
 const decodeAuthorizationRequest = Schema.decodeEffect(AuthMcpAuthorizationRequest);
+// Decoded by the handler so malformed metadata gets the RFC 7591 error, not HttpApi's empty 400.
+const decodeClientRegistration = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(AuthMcpClientRegistration),
+);
 
 /**
  * An unverified client or redirect is reported, never redirected; any other problem goes back to
@@ -71,8 +77,18 @@ export const layer = HttpApiBuilder.group(
       .handle("authorizationServer", () =>
         requestUrls.pipe(Effect.map(McpOAuth.authorizationServerMetadata)),
       )
-      .handle("register", ({ payload }) =>
-        oauth.register(payload).pipe(
+      .handleRaw("register", ({ request }) =>
+        request.text.pipe(
+          Effect.orDie,
+          Effect.flatMap(decodeClientRegistration),
+          Effect.mapError(
+            (cause) =>
+              new AuthMcpRegistrationError({
+                error: "invalid_client_metadata",
+                error_description: `Invalid client metadata: ${cause.message}`,
+              }),
+          ),
+          Effect.flatMap(oauth.register),
           Effect.map((client) => ({
             client_id: client.clientId,
             client_name: client.name,
@@ -115,12 +131,15 @@ export const layer = HttpApiBuilder.group(
           const resolved = yield* forwardedAuthorization(oauth, payload);
           if ("redirectTo" in resolved) return resolved;
           const urls = yield* requestUrls;
-          const session = yield* oauth.approvingBrowserSession(request, resolved);
+          const session = yield* oauth.approvingSession(request, resolved);
           yield* noStore;
           return {
             clientName: resolved.client.name,
             redirectHost: new URL(resolved.redirectUri).host,
             environmentHost: new URL(urls.issuer).host,
+            ...(oauth.runtimeModeCeiling === undefined
+              ? {}
+              : { runtimeModeCeiling: oauth.runtimeModeCeiling }),
             ...(session === undefined
               ? {}
               : {

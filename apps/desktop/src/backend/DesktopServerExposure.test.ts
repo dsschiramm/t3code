@@ -1,4 +1,5 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -7,6 +8,7 @@ import * as Layer from "effect/Layer";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
+import * as DesktopManagedPolicy from "../app/DesktopManagedPolicy.ts";
 import * as DesktopNetworkInterfaces from "./DesktopNetworkInterfaces.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -35,7 +37,11 @@ function layerEnvironmentFor(baseDir: string, env: Record<string, string | undef
     runningUnderArm64Translation: false,
   }).pipe(
     Layer.provide(
-      Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({ T3CODE_HOME: baseDir, ...env })),
+      Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        DesktopConfig.layerTest({ T3CODE_HOME: baseDir, ...env }),
+      ),
     ),
   );
 }
@@ -45,6 +51,7 @@ function layer(input: {
   readonly networkInterfaces?: DesktopNetworkInterfaces.NetworkInterfaces;
   readonly env?: Record<string, string | undefined>;
   readonly desktopSettingsLayer?: Layer.Layer<DesktopAppSettings.DesktopAppSettings>;
+  readonly managedPolicyLayer?: Layer.Layer<DesktopManagedPolicy.DesktopManagedPolicy>;
 }) {
   const env = { T3CODE_HOME: input.baseDir, ...input.env };
   const layerEnvironment = layerEnvironmentFor(input.baseDir, env);
@@ -54,6 +61,7 @@ function layer(input: {
 
   return DesktopServerExposure.layer.pipe(
     Layer.provideMerge(input.desktopSettingsLayer ?? DesktopAppSettings.layer),
+    Layer.provideMerge(input.managedPolicyLayer ?? DesktopManagedPolicy.layerTest()),
     Layer.provideMerge(NodeFileSystem.layer),
     Layer.provideMerge(layerNetwork),
     Layer.provideMerge(DesktopConfig.layerTest(env)),
@@ -74,6 +82,7 @@ const withHarness = <A, E, R>(
   >,
   env: Record<string, string | undefined> = {},
   desktopSettingsLayer?: Layer.Layer<DesktopAppSettings.DesktopAppSettings>,
+  managedPolicyLayer?: Layer.Layer<DesktopManagedPolicy.DesktopManagedPolicy>,
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -87,10 +96,11 @@ const withHarness = <A, E, R>(
           networkInterfaces,
           env,
           ...(desktopSettingsLayer ? { desktopSettingsLayer } : {}),
+          ...(managedPolicyLayer ? { managedPolicyLayer } : {}),
         }),
       ),
     );
-  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped);
 
 describe("DesktopServerExposure", () => {
   it.effect("falls back to local-only without losing the requested network preference", () =>
@@ -110,6 +120,36 @@ describe("DesktopServerExposure", () => {
         const backendConfig = yield* serverExposure.backendConfig;
         assert.equal(backendConfig.bindHost, "127.0.0.1");
         assert.equal(backendConfig.httpBaseUrl.href, "http://127.0.0.1:4173/");
+      }),
+    ),
+  );
+
+  it.effect("starts local-only when a managed policy keeps clients local", () =>
+    withHarness(
+      lanNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        yield* settings.setServerExposureMode("network-accessible");
+
+        const state = yield* serverExposure.configureFromSettings({ port: 4173 });
+        assert.equal(state.mode, "local-only");
+        const backendConfig = yield* serverExposure.backendConfig;
+        assert.equal(backendConfig.bindHost, "127.0.0.1");
+        // Choosing it again while the policy applies does not widen the backend either.
+        yield* serverExposure.setMode("network-accessible");
+        assert.equal((yield* serverExposure.backendConfig).bindHost, "127.0.0.1");
+        // The saved choice returns once the policy allows it.
+        const saved = yield* settings.get;
+        assert.equal(saved.serverExposureMode, "network-accessible");
+      }),
+      {},
+      undefined,
+      undefined,
+      DesktopManagedPolicy.layerTest({
+        schemaVersion: 1,
+        organization: "Example Corp",
+        limits: { clients: ["desktop"] },
       }),
     ),
   );

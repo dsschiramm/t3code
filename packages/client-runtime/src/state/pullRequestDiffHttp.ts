@@ -6,15 +6,11 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/http";
 
 import type { PreparedConnection } from "../connection/model.ts";
-import {
-  makeEnvironmentHttpApiUrlBuilder,
-  type RemoteEnvironmentRequestError,
-} from "../rpc/http.ts";
+import { type RemoteEnvironmentRequestError } from "../rpc/http.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
 
 const DEFAULT_PULL_REQUEST_DIFF_TIMEOUT_MS = 60_000;
@@ -37,7 +33,7 @@ export type PullRequestDiffLoadError =
   | RemoteEnvironmentRequestError
   | PullRequestDiffCredentialRejectedError;
 
-export const fetchEnvironmentPullRequestDiff = Effect.fn(
+const fetchEnvironmentPullRequestDiff = Effect.fn(
   "clientRuntime.state.fetchEnvironmentPullRequestDiff",
 )(function* (input: {
   readonly prepared: PreparedConnection;

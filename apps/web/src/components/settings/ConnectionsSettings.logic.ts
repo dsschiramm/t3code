@@ -18,6 +18,7 @@ import {
   type DesktopSshEnvironmentTarget,
   type DesktopUpdateState,
   type DesktopWslState,
+  type EnvironmentId,
 } from "@t3tools/contracts";
 import {
   getDesktopUpdateDownloadedVersion,
@@ -183,7 +184,7 @@ export function parseManualDesktopSshTarget(input: {
 
   const rawPort = input.port.trim();
   if (rawPort.length > 0) {
-    port = Number.parseInt(rawPort, 10);
+    port = /^\d+$/u.test(rawPort) ? Number.parseInt(rawPort, 10) : Number.NaN;
   }
 
   if (hostname.length === 0) {
@@ -398,4 +399,23 @@ export function endpointShareHint(endpoint: AdvertisedEndpoint, url: string): st
     case "loopback":
       return "Clients on this machine";
   }
+}
+
+/** An explicit choice while it is listed, else the primary, else a connected environment. */
+export function resolveAccessEnvironmentId(input: {
+  readonly primaryEnvironmentId: EnvironmentId | null;
+  readonly environments: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly connected: boolean;
+  }>;
+  readonly selected: EnvironmentId | null;
+}): EnvironmentId | null {
+  const isListed = (environmentId: EnvironmentId | null) =>
+    input.environments.some((environment) => environment.environmentId === environmentId);
+  if (isListed(input.selected)) return input.selected;
+  if (isListed(input.primaryEnvironmentId)) return input.primaryEnvironmentId;
+  return (
+    (input.environments.find((environment) => environment.connected) ?? input.environments[0])
+      ?.environmentId ?? null
+  );
 }

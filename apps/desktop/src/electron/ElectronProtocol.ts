@@ -12,7 +12,7 @@ import * as Scope from "effect/Scope";
 
 import * as Electron from "electron";
 
-export const DESKTOP_HOST = "app";
+const DESKTOP_HOST = "app";
 const DESKTOP_PRODUCTION_SCHEME = "t3code";
 const DESKTOP_DEVELOPMENT_SCHEME = "t3code-dev";
 
@@ -206,9 +206,7 @@ const serveDesktopAsset = Effect.fn("desktop.protocol.serveAsset")(function* (
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response(null, { status: 405 });
   }
-  const pathname = yield* Effect.try(() => decodeURIComponent(url.pathname)).pipe(
-    Effect.orElseSucceed(() => null),
-  );
+  const pathname = Option.getOrNull(Option.liftThrowable(decodeURIComponent)(url.pathname));
   if (pathname === null || pathname.includes("\0")) return new Response(null, { status: 400 });
   const root = path.resolve(assetDirectory);
   const assetPath = path.resolve(root, `.${pathname}`);

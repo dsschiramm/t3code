@@ -1,11 +1,3 @@
-/**
- * RemoteOpenTargets - resolves the SSH hostnames this environment advertises
- * for remote open-in-editor deep links (`vscode://vscode-remote/ssh-remote+…`).
- *
- * The server can only check itself: sshd listening locally, and the machine
- * hostname for mDNS. Whether a given name resolves from the viewer's machine
- * is inherently client-side.
- */
 import { type RemoteOpenTarget } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NetService from "@t3tools/shared/Net";
@@ -13,7 +5,10 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { makeStaleWhileRevalidate } from "./staleWhileRevalidate.ts";
+
 const SSH_PORT = 22;
+const TARGETS_CACHE_TTL = "60 seconds";
 
 export class RemoteOpenTargets extends Context.Service<
   RemoteOpenTargets,
@@ -26,7 +21,7 @@ export class RemoteOpenTargets extends Context.Service<
 export const make = Effect.gen(function* () {
   const net = yield* NetService.NetService;
 
-  const resolveTargets = Effect.gen(function* () {
+  const discoverTargets = Effect.gen(function* () {
     // Check both loopback families: sshd can be bound IPv6-only.
     const sshdListening = yield* Effect.zipWith(
       net.hasListenerOnHost(SSH_PORT, "127.0.0.1"),
@@ -56,6 +51,10 @@ export const make = Effect.gen(function* () {
 
     return targets;
   });
+
+  // Advertised on every client connect; probing sshd is slow
+  // on a loaded host, so serve the last result while it refreshes.
+  const resolveTargets = yield* makeStaleWhileRevalidate(discoverTargets, TARGETS_CACHE_TTL);
 
   return RemoteOpenTargets.of({
     resolveTargets: Effect.fn("RemoteOpenTargets.resolveTargets")(function () {

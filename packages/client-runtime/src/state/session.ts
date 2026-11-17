@@ -1,8 +1,18 @@
 import { pipe } from "effect/Function";
-import type { AuthSessionState, EnvironmentId, ServerConfig } from "@t3tools/contracts";
-import * as Data from "effect/Data";
+import {
+  type AuthEnvironmentScope,
+  AuthSessionState,
+  EnvironmentAuthInvalidError,
+  type EnvironmentId,
+  EnvironmentOperationForbiddenError,
+  EnvironmentScopeRequiredError,
+  type ServerConfig,
+  sessionGrantsScope,
+} from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { HttpClient } from "effect/http";
@@ -11,15 +21,19 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import type { PreparedConnection } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
-import type { RemoteEnvironmentRequestError } from "../rpc/http.ts";
+import {
+  RemoteEnvironmentAuthUndeclaredStatusError,
+  type RemoteEnvironmentRequestError,
+} from "../rpc/http.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
 import { followStreamInEnvironment } from "./environmentStreams.ts";
 
 /** @public Required to name the error in consumers' inferred session results. */
-export class SessionHttpClientUnavailable extends Data.TaggedError(
+export class SessionHttpClientUnavailable extends Schema.TaggedError<SessionHttpClientUnavailable>()(
   "SessionHttpClientUnavailable",
+  {},
 ) {}
 
 function initialConfigOption<E>(
@@ -41,12 +55,38 @@ const MAX_SESSION_STATE_TIMEOUT_MS = 60_000;
 const SESSION_STATE_RETRY_BASE_MS = 2_000;
 const SESSION_STATE_RETRY_MAX_MS = 60_000;
 
+const isSessionRejectionError = Schema.is(
+  Schema.Union([
+    EnvironmentAuthInvalidError,
+    EnvironmentScopeRequiredError,
+    EnvironmentOperationForbiddenError,
+  ]),
+);
+const isUndeclaredStatusError = Schema.is(RemoteEnvironmentAuthUndeclaredStatusError);
+
+/**
+ * True only when the host said no: its session lacks the scope, or it rejected the credential.
+ * A lookup that is still pending or failed on the network is not a denial.
+ */
+export function sessionDeniesScope(
+  result: AsyncResult.AsyncResult<AuthSessionState, unknown>,
+  scope: AuthEnvironmentScope,
+): boolean {
+  if (result._tag === "Success") return !sessionGrantsScope(result.value, scope);
+  return result._tag === "Failure" && isSessionRejection(result.cause);
+}
+
+function isSessionRejection(cause: Cause.Cause<unknown>): boolean {
+  const error = Option.getOrNull(Cause.findErrorOption(cause));
+  if (isUndeclaredStatusError(error)) {
+    return error.status === 401 || error.status === 403;
+  }
+  return isSessionRejectionError(error);
+}
+
 export const fetchEnvironmentSessionState = Effect.fn(
   "clientRuntime.state.fetchEnvironmentSessionState",
-)(function* (input: {
-  readonly prepared: PreparedConnection;
-  readonly timeoutMs?: number;
-}) {
+)(function* (input: { readonly prepared: PreparedConnection; readonly timeoutMs?: number }) {
   const request = (
     timeoutMs: number,
   ): Effect.Effect<AuthSessionState, RemoteEnvironmentRequestError, HttpClient.HttpClient> =>
@@ -57,8 +97,6 @@ export const fetchEnvironmentSessionState = Effect.fn(
       url: (urls) => urls.session(),
       timeoutMs,
       request: ({ client, headers }) => client.session({ headers }),
-      // This endpoint returns 200 with authenticated:false for expired credentials.
-      isUnauthorizedResponse: (response) => !response.authenticated,
     }).pipe(
       // A timeout says nothing about grants; failing would show a busy host as read-only.
       Effect.catchTags({

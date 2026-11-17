@@ -13,7 +13,7 @@ describe("shouldHandleAppLink", () => {
   it.each(["t3code://", "t3code:///", "t3code-dev://", "t3code-preview://"])(
     "ignores scheme-only URL %s",
     (url) => {
-      expect(shouldHandleAppLink(url, true)).toBe(false);
+      expect(shouldHandleAppLink(url)).toBe(false);
     },
   );
 
@@ -21,40 +21,17 @@ describe("shouldHandleAppLink", () => {
     "t3code://threads/env-1/thread-1",
     "t3code://pair?pairingUrl=x",
     "t3code-dev://settings/usage?tab=limits",
+    "https://app.t3.codes/threads/env/thread?prompt=Fix%20expo-development-client%20and%20t3code://expo-sharing",
   ])("handles path-bearing URL %s", (url) => {
-    expect(shouldHandleAppLink(url, true)).toBe(true);
+    expect(shouldHandleAppLink(url)).toBe(true);
   });
 
   it.each(["t3code://expo-development-client/?url=x", "t3code://expo-sharing/anything"])(
     "ignores lifecycle URL %s",
     (url) => {
-      expect(shouldHandleAppLink(url, true)).toBe(false);
+      expect(shouldHandleAppLink(url)).toBe(false);
     },
   );
-});
-
-describe("cloud-only deep links", () => {
-  it.each([
-    "t3code://connect-onboarding",
-    "t3code-dev://connect-onboarding/?source=x",
-    "t3code://settings/waitlist",
-    "t3code://settings/auth",
-    "exp://192.168.1.2:8081/--/settings/auth",
-  ])("ignores %s without cloud config", (url) => {
-    expect(shouldHandleAppLink(url, false)).toBe(false);
-    expect(shouldHandleAppLink(url, true)).toBe(true);
-  });
-
-  it.each([
-    "t3code://settings",
-    "t3code://settings/authors",
-    "t3code://pair?next=settings/auth",
-    "t3code://threads/env/thread/files/scripts/connect-onboarding",
-    "t3code://new/draft/files/settings/auth",
-    "exp://192.168.1.2:8081/--/threads/env/thread/files/settings/waitlist",
-  ])("still handles %s without cloud config", (url) => {
-    expect(shouldHandleAppLink(url, false)).toBe(true);
-  });
 });
 
 describe("draft deep links", () => {

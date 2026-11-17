@@ -5,6 +5,7 @@ export interface EnvironmentRuntimeState {
   readonly connectionState: EnvironmentConnectionPhase;
   readonly connectionError: string | null;
   readonly connectionErrorTraceId: string | null;
+  /** Reconnecting only because the host has not approved this device yet. */
   readonly serverConfig: ServerConfig | null;
 }
 

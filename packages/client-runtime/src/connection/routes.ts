@@ -78,6 +78,13 @@ function routeHostname(route: ConnectionRoute): string | null {
   }
 }
 
+function directAddressKind(hostname: string) {
+  if (isLocalLoopbackHost(hostname)) return "loopback";
+  if (isTailnetHost(hostname)) return "tailnet";
+  if (isSharedAddressSpaceHost(hostname)) return "vpn";
+  return isPrivateNetworkHost(hostname) ? "lan" : "public";
+}
+
 export function connectionRouteKind(route: ConnectionRoute): ConnectionRouteKind {
   switch (route.target._tag) {
     case "SshConnectionTarget":
@@ -86,11 +93,29 @@ export function connectionRouteKind(route: ConnectionRoute): ConnectionRouteKind
     case "BearerConnectionTarget": {
       const hostname = routeHostname(route);
       if (hostname === null) return "public";
-      if (isLocalLoopbackHost(hostname)) return "loopback";
-      if (isTailnetHost(hostname)) return "tailnet";
-      if (isSharedAddressSpaceHost(hostname)) return "vpn";
-      return isPrivateNetworkHost(hostname) ? "lan" : "public";
+      return directAddressKind(hostname);
     }
+  }
+}
+
+/**
+ * Whether the route's address reaches the same machine on every network: TLS
+ * proves who answers, and loopback cannot move. Any other plain http address,
+ * a tailnet one too once Tailscale is down, can belong to another machine after
+ * a network change, so an answer from it is not kept.
+ */
+export function routeKeepsItsHost(route: ConnectionRoute): boolean {
+  if (routeHttpBaseUrl(route)?.startsWith("https:") === true) return true;
+  return connectionRouteKind(route) === "loopback";
+}
+
+/** A loopback or LAN host answers within a few seconds or is not there. */
+export function isNearbyAddress(httpBaseUrl: string): boolean {
+  try {
+    const kind = directAddressKind(new URL(httpBaseUrl).hostname);
+    return kind === "loopback" || kind === "lan";
+  } catch {
+    return false;
   }
 }
 
@@ -111,11 +136,14 @@ const ROUTE_KIND_RANK: Record<ConnectionRouteKind, number> = {
 export function insertRoute(
   routes: ReadonlyArray<ConnectionRoute>,
   route: ConnectionRoute,
+  { aheadOfSameKind = false }: { readonly aheadOfSameKind?: boolean } = {},
 ): ReadonlyArray<ConnectionRoute> {
-  const rank = ROUTE_KIND_RANK[connectionRouteKind(route)];
-  const index = routes.findIndex(
-    (existing) => ROUTE_KIND_RANK[connectionRouteKind(existing)] > rank,
-  );
+  const kind = connectionRouteKind(route);
+  const rank = ROUTE_KIND_RANK[kind];
+  const index = routes.findIndex((existing) => {
+    const existingKind = connectionRouteKind(existing);
+    return ROUTE_KIND_RANK[existingKind] > rank || (aheadOfSameKind && existingKind === kind);
+  });
   return index === -1
     ? [...routes, route]
     : [...routes.slice(0, index), route, ...routes.slice(index)];
@@ -128,7 +156,9 @@ export function upsertRoute(
   const id = connectionRouteId(route.target);
   return routes.some((existing) => connectionRouteId(existing.target) === id)
     ? routes.map((existing) => (connectionRouteId(existing.target) === id ? route : existing))
-    : insertRoute(routes, route);
+    : // A route paired at a new address, such as localhost beside a saved
+      // 127.0.0.1, goes first among its kind so its fresh credential connects.
+      insertRoute(routes, route, { aheadOfSameKind: true });
 }
 
 export function findRouteToSameAddress(
@@ -187,12 +217,9 @@ export const hasSavedBearerRoute = (entry: ConnectionCatalogEntry) =>
   connectionRoutes(entry).some((r) => !isLearned(r) && r.target._tag === "BearerConnectionTarget");
 
 /**
- * The routes after the server reports where it listens. Each newly reported
- * address becomes a learned route that authenticates the same way as the route
- * in use: the paired token of the bearer route. A learned route the server still reports keeps its place, so the
- * user's order holds; one it no longer reports is dropped, so a changed LAN
- * address replaces the old one. Routes the user saved are never touched, and
- * an address already saved is not learned twice.
+ * The routes after the server reports where it listens. New addresses become learned
+ * routes using the in-use bearer token; ones no longer reported are dropped. Saved routes
+ * are never touched and an address is not learned twice.
  */
 export function mergeLearnedRoutes(input: {
   readonly entry: ConnectionCatalogEntry;

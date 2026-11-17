@@ -2,8 +2,6 @@ import {
   type DesktopSshEnvironmentTarget,
   EnvironmentId,
   type OrchestrationV2ShellSnapshot,
-  ORCHESTRATION_PROTOCOL_VERSION,
-  type ExecutionEnvironmentDescriptor,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
@@ -372,7 +370,13 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
           client: {} as RpcSession.RpcSession["client"],
           initialConfig: Effect.die(new Error("Config is not used by registry tests.")),
           subscribeServerConfig: () =>
-            Stream.die(new Error("Config is not used by registry tests.")),
+            options?.directEndpoints === undefined
+              ? Stream.never
+              : Stream.make({
+                  version: 1 as const,
+                  type: "snapshot" as const,
+                  config: { directEndpoints: options.directEndpoints } as ServerConfig,
+                }),
           ready: Effect.void,
           probe: Effect.void,
           inboundFrames: Effect.succeed(0),
@@ -471,10 +475,7 @@ function registrySpanNames<A, E, R>(effect: Effect.Effect<A, E, R>) {
       return new Tracer.NativeSpan(options);
     },
   });
-  return effect.pipe(
-    Effect.withTracer(tracer),
-    Effect.map(() => names),
-  );
+  return effect.pipe(Effect.withTracer(tracer), Effect.as(names));
 }
 
 function awaitConnectionState(
@@ -1047,8 +1048,7 @@ describe("EnvironmentRegistry", () => {
       const harness = yield* makeHarness([], [], [], {
         beforePrepareRoute: (target) =>
           target._tag !== "BearerConnectionTarget" || storedCredentials === undefined
-            ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - Admission checks return an optional blocker, so absence must be undefined.
-              Effect.succeed(undefined)
+            ? Effect.undefined
             : Ref.get(storedCredentials).pipe(
                 Effect.map((current) =>
                   current.get(target.connectionId)?.token === "old-bearer"
@@ -1148,8 +1148,7 @@ describe("EnvironmentRegistry", () => {
       const harness = yield* makeHarness([], [], [], {
         beforePrepareRoute: (target) =>
           target._tag !== "BearerConnectionTarget"
-            ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - Admission checks return an optional blocker, so absence must be undefined.
-              Effect.succeed(undefined)
+            ? Effect.undefined
             : Ref.updateAndGet(attempts, (count) => count + 1).pipe(
                 Effect.flatMap((count) =>
                   count === 1
@@ -1162,8 +1161,7 @@ describe("EnvironmentRegistry", () => {
                           }),
                         ),
                       )
-                    : // @effect-diagnostics-next-line effectSucceedWithVoid:off - Admission checks return an optional blocker, so absence must be undefined.
-                      Effect.succeed(undefined),
+                    : Effect.undefined,
                 ),
               ),
       });
@@ -1277,7 +1275,9 @@ describe("EnvironmentRegistry", () => {
           label: "Shadowed environment",
         });
         const shadowedTarget =
-          registration._tag === "BearerConnectionRegistration" ? registration.target : persistedTarget;
+          registration._tag === "BearerConnectionRegistration"
+            ? registration.target
+            : persistedTarget;
         const shadowedProfile =
           registration._tag === "BearerConnectionRegistration"
             ? registration.profile
@@ -1705,6 +1705,38 @@ describe("EnvironmentRegistry routes", () => {
 
         expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
           repaired,
+          RELAY_TARGET,
+        ]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("re-pairing at another loopback address prefers the new route", () =>
+    Effect.gen(function* () {
+      const loopback = (connectionId: string, host: string) =>
+        [
+          new BearerConnectionTarget({ ...LAN_TARGET, connectionId }),
+          new BearerConnectionProfile({
+            ...LAN_PROFILE,
+            connectionId,
+            httpBaseUrl: `http://${host}:3773/`,
+            wsBaseUrl: `ws://${host}:3773/`,
+          }),
+        ] as const;
+      const [savedTarget, savedProfile] = loopback("bearer:ip", "127.0.0.1");
+      const [pastedTarget, pastedProfile] = loopback("bearer:localhost", "localhost");
+      const harness = yield* makeHarness(
+        [savedTarget, RELAY_TARGET],
+        [savedProfile],
+        [[savedTarget.connectionId, BEARER_CREDENTIAL]],
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.register(lanRegistration(pastedTarget, pastedProfile));
+
+        expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
+          pastedTarget,
+          savedTarget,
           RELAY_TARGET,
         ]);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);

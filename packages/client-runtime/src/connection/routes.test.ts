@@ -16,8 +16,10 @@ import {
   credentialConnectionId,
   insertRoute,
   entryWithRoutes,
+  isNearbyAddress,
   mergeLearnedRoutes,
   pendingRouteOrder,
+  routeKeepsItsHost,
   routesAfterRemoving,
   sendsTokenInClear,
   upsertRoute,
@@ -72,6 +74,28 @@ describe("connection routes", () => {
     expect(connectionRouteLabel(LAN)).toBe("LAN");
   });
 
+  it("knows which addresses reach the same machine on every network", () => {
+    const tailnetIp = direct("ts-ip", "http://100.101.102.103:3773/");
+    expect(routeKeepsItsHost(PUBLIC)).toBe(true);
+    expect(routeKeepsItsHost(direct("ts-tls", "https://desk.tail1234.ts.net/"))).toBe(true);
+    expect(routeKeepsItsHost(direct("lo", "http://127.0.0.1:3773/"))).toBe(true);
+    // With Tailscale down, a plain http tailnet address can reach another host:
+    // carrier networks use 100.64.0.0/10 too, and nothing proves who answers.
+    expect(routeKeepsItsHost(direct("ts", "http://desk.tail1234.ts.net:3773/"))).toBe(false);
+    expect(routeKeepsItsHost(tailnetIp)).toBe(false);
+    expect(routeKeepsItsHost(LAN)).toBe(false);
+    expect(routeKeepsItsHost(direct("http", "http://desk.example.com/"))).toBe(false);
+  });
+
+  it("treats only loopback and LAN addresses as nearby", () => {
+    expect(isNearbyAddress("http://127.0.0.1:3773/")).toBe(true);
+    expect(isNearbyAddress("http://192.168.1.10:3773/")).toBe(true);
+    expect(isNearbyAddress("http://100.101.102.103:3773/")).toBe(false);
+    expect(isNearbyAddress("https://desk.tail1234.ts.net/")).toBe(false);
+    expect(isNearbyAddress("https://desk.example.com/")).toBe(false);
+    expect(isNearbyAddress("not a url")).toBe(false);
+  });
+
   it("places a new route after faster kinds", () => {
     expect(insertRoute([PUBLIC], LAN)).toEqual([LAN, PUBLIC]);
     expect(insertRoute([LAN, PUBLIC], TAILNET)).toEqual([LAN, TAILNET, PUBLIC]);
@@ -83,6 +107,17 @@ describe("connection routes", () => {
     // The user preferred the public address over the LAN; re-pairing the LAN keeps that.
     const repaired = direct("lan", "http://192.168.1.11:3773/");
     expect(upsertRoute([PUBLIC, LAN], repaired)).toEqual([PUBLIC, repaired]);
+  });
+
+  it("puts a newly paired route ahead of saved routes of the same kind", () => {
+    const pasted = direct("lan-2", "http://192.168.1.11:3773/");
+    expect(upsertRoute([LAN, TAILNET], pasted)).toEqual([pasted, LAN, TAILNET]);
+  });
+
+  it("keeps a newly paired route behind a different kind of the same rank", () => {
+    const vpn = direct("vpn", "http://100.101.102.103:3773/");
+    const pasted = direct("ts-2", "http://[fd7a:115c:a1e0::2]:3773/");
+    expect(upsertRoute([vpn, TAILNET], pasted)).toEqual([vpn, pasted, TAILNET]);
   });
 
   it("shows a dragged order only until the saved routes catch up or change", () => {

@@ -3,16 +3,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
+import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { WEB_LINK_OPEN_CHANNEL } from "../ipc/channels.ts";
-
-export const isWebLink = (value: string) => {
-  if (!URL.canParse(value)) return false;
-  const { protocol } = new URL(value);
-  return protocol === "http:" || protocol === "https:";
-};
-
-export const isWebPageFile = (path: string) => /\.x?html?$/i.test(path);
 
 export class DesktopWebLinks extends Context.Service<
   DesktopWebLinks,
@@ -24,6 +17,7 @@ export class DesktopWebLinks extends Context.Service<
 
 const make = Effect.gen(function* () {
   const electronWindow = yield* ElectronWindow.ElectronWindow;
+  const desktopWindow = yield* DesktopWindow.DesktopWindow;
   const pending: Array<string> = [];
   let listening: Electron.WebContents | null = null;
   let detachListening: (() => void) | null = null;
@@ -43,7 +37,7 @@ const make = Effect.gen(function* () {
       return;
     }
     for (const url of pending.splice(0)) listening.send(WEB_LINK_OPEN_CHANNEL, url);
-    yield* electronWindow.reveal(window.value);
+    yield* desktopWindow.activate.pipe(Effect.ignore);
   });
 
   const startListening = Effect.gen(function* () {

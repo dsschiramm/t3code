@@ -1,9 +1,6 @@
-import {
-  ClientCapabilities,
-  PlatformConnectionSource,
-  Persistence,
-} from "@t3tools/client-runtime/platform";
+import { ClientCapabilities, PlatformConnectionSource } from "@t3tools/client-runtime/platform";
 import { ConnectionBlockedError, Connectivity, Wakeups } from "@t3tools/client-runtime/connection";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -16,10 +13,8 @@ import { AppState } from "react-native";
 
 import { authClientMetadata } from "../lib/authClientMetadata";
 import * as Runtime from "../lib/runtime";
-import { clearThreadOutboxEnvironment } from "../state/thread-outbox-removal";
-import { clearComposerDraftsEnvironment } from "../state/use-composer-drafts";
-import { clearThreadComposerErrorsForEnvironment } from "../state/thread-composer-error";
 import { mobileApplicationActiveWakeup } from "./app-state-wakeups";
+import * as EnvironmentOwnedDataCleanup from "./environment-owned-data-cleanup";
 import * as ConnectionStorage from "./storage";
 
 function networkStatus(state: Network.NetworkState): "unknown" | "offline" | "online" {
@@ -112,8 +107,9 @@ const layerWakeups = Wakeups.layer({
     [
       Stream.callback<"application-active-probe" | "application-active-long">((queue) =>
         Effect.acquireRelease(
-          Effect.sync(() => {
-            let backgroundedAtMs = AppState.currentState === "background" ? Date.now() : null;
+          Effect.gen(function* () {
+            const nowMs = yield* Clock.currentTimeMillis;
+            let backgroundedAtMs = AppState.currentState === "background" ? nowMs : null;
             return AppState.addEventListener("change", (state) => {
               if (state === "background") {
                 backgroundedAtMs = Date.now();
@@ -154,21 +150,25 @@ const layerCapabilities = Layer.effectContext(
       Context.add(
         ClientCapabilities.SshEnvironmentGateway,
         ClientCapabilities.SshEnvironmentGateway.of({
-          provision: () =>
+          provision: Effect.fn("ClientCapabilities.SshEnvironmentGateway.provision")(() =>
             Effect.fail(
               new ConnectionBlockedError({
                 reason: "unsupported",
                 detail: "SSH environments are only available in the desktop app.",
               }),
             ),
-          prepare: () =>
+          ),
+          prepare: Effect.fn("ClientCapabilities.SshEnvironmentGateway.prepare")(() =>
             Effect.fail(
               new ConnectionBlockedError({
                 reason: "unsupported",
                 detail: "SSH environments are only available in the desktop app.",
               }),
             ),
-          disconnect: () => Effect.void,
+          ),
+          disconnect: Effect.fn("ClientCapabilities.SshEnvironmentGateway.disconnect")(
+            () => Effect.void,
+          ),
         }),
       ),
     );
@@ -185,28 +185,6 @@ const layerPlatformConnectionSource = Layer.succeed(
 const layerProvidedConnectionStorage = ConnectionStorage.layer.pipe(Layer.provide(Runtime.layer));
 const layerProvidedCapabilities = layerCapabilities.pipe(Layer.provide(Runtime.layer));
 
-const layerEnvironmentOwnedDataCleanup = Layer.succeed(
-  Persistence.EnvironmentOwnedDataCleanup,
-  Persistence.EnvironmentOwnedDataCleanup.of({
-    clear: (environmentId) =>
-      Effect.all(
-        [
-          Effect.promise(() => clearThreadOutboxEnvironment(environmentId)),
-          Effect.promise(() => clearComposerDraftsEnvironment(environmentId)),
-          Effect.sync(() => clearThreadComposerErrorsForEnvironment(environmentId)),
-        ],
-        { concurrency: "unbounded", discard: true },
-      ).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("Could not clear mobile environment-owned data.", {
-            environmentId,
-            cause,
-          }),
-        ),
-      ),
-  }),
-);
-
 type ConnectionPlatformLayerSource =
   | typeof layerProvidedConnectionStorage
   | typeof Runtime.layer
@@ -214,7 +192,7 @@ type ConnectionPlatformLayerSource =
   | typeof layerWakeups
   | typeof layerProvidedCapabilities
   | typeof layerPlatformConnectionSource
-  | typeof layerEnvironmentOwnedDataCleanup;
+  | typeof EnvironmentOwnedDataCleanup.layer;
 
 export const layer: Layer.Layer<
   Layer.Success<ConnectionPlatformLayerSource>,
@@ -227,5 +205,5 @@ export const layer: Layer.Layer<
   layerWakeups,
   layerProvidedCapabilities,
   layerPlatformConnectionSource,
-  layerEnvironmentOwnedDataCleanup,
+  EnvironmentOwnedDataCleanup.layer,
 );

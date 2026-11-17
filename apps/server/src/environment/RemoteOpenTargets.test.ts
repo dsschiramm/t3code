@@ -11,7 +11,8 @@ const layerNet = (input: { readonly ipv4: boolean; readonly ipv6: boolean }) =>
   Layer.succeed(NetService.NetService, {
     canListenOnHost: () => Effect.succeed(true),
     isPortAvailableOnLoopback: () => Effect.succeed(true),
-    hasListenerOnHost: (_port, host) => Effect.succeed(host === "::1" ? input.ipv6 : input.ipv4),
+    hasListenerOnHost: (_port, host) =>
+      Effect.succeed(host === "127.0.0.1" ? input.ipv4 : host === "::1" ? input.ipv6 : false),
     reserveLoopbackPort: () => Effect.succeed(40_000),
     findAvailablePort: (preferred) => Effect.succeed(preferred),
   });

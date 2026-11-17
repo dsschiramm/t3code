@@ -1,3 +1,4 @@
+import * as PlatformNodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -38,7 +39,7 @@ const handlerFor = (
           Layer.provideMerge(Etag.layerWeak),
         ),
       ),
-      Layer.provide(NodeServices.layer),
+      Layer.provide([NodeServices.layer, PlatformNodeCrypto.layerSignature]),
     ),
     { disableLogger: true },
   );
@@ -90,6 +91,7 @@ describe("webhook route", () => {
       [{ _tag: "not_found" }, 404, "not_found"],
       [{ _tag: "rejected_signature" }, 401, "rejected_signature"],
       [{ _tag: "disabled" }, 409, "disabled"],
+      [{ _tag: "blocked_by_policy" }, 403, "blocked_by_policy"],
       [{ _tag: "rate_limited", outcome: "rate_limited" }, 429, "rate_limited"],
       [{ _tag: "rate_limited", outcome: "queue_full" }, 429, "queue_full"],
       [{ _tag: "expired" }, 410, "expired"],

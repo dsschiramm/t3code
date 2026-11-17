@@ -1,13 +1,3 @@
-/**
- * `t3 pair` - mint a pairing token for an already-running server and print it
- * as a QR code, without restarting anything.
- *
- * Discovery reads the `server-runtime.json` a live server persists next to its
- * database, then confirms the process is actually answering by fetching its
- * public environment descriptor. Inside a linked git worktree the worktree's
- * own `.t3` is checked first (matching dev-runner precedence); otherwise the
- * shared T3 home.
- */
 import {
   type AuthEnvironmentScope,
   AuthStandardClientScopes,
@@ -47,6 +37,7 @@ import {
 } from "../startupAccess.ts";
 import { authScopesFlag } from "./authScopes.ts";
 import { baseDirFlag, DurationFromString } from "./config.ts";
+import { hostShellWord, resolveHostCliCommand } from "./invocation.ts";
 
 const WELL_KNOWN_ENVIRONMENT_PATH = "/.well-known/t3/environment";
 const PAIR_PROBE_TIMEOUT = Duration.millis(2_500);
@@ -61,6 +52,7 @@ export class NoRunningServerError extends Schema.TaggedError<NoRunningServerErro
   {
     checkedStatePaths: Schema.Array(Schema.String),
     inLinkedWorktree: Schema.Boolean,
+    serveCommand: Schema.String,
   },
 ) {
   override get message(): string {
@@ -70,28 +62,36 @@ export class NoRunningServerError extends Schema.TaggedError<NoRunningServerErro
       ...(this.inLinkedWorktree
         ? ["In a linked worktree, pass --base-dir to pair with a server outside it."]
         : []),
-      "Start one with `npx t3 serve`.",
+      `Start one with \`${this.serveCommand}\`.`,
     ].join("\n");
   }
 }
 
 export class IncompatibleServerProtocolError extends Schema.TaggedError<IncompatibleServerProtocolError>()(
   "IncompatibleServerProtocolError",
-  { serverVersion: Schema.String, serverProtocolVersion: Schema.Number },
+  {
+    serverVersion: Schema.String,
+    serverProtocolVersion: Schema.Number,
+    pairCommand: Schema.String,
+  },
 ) {
   override get message(): string {
     return [
       `The running T3 Code server (${this.serverVersion}) speaks orchestration protocol ${String(this.serverProtocolVersion)}, but this CLI speaks protocol ${String(ORCHESTRATION_PROTOCOL_VERSION)}.`,
-      `Pair with the matching CLI instead: \`npx t3@${this.serverVersion} pair\`.`,
+      `Pair with the matching CLI instead: \`${this.pairCommand}\`.`,
     ].join("\n");
   }
 }
 
 /** The URL a browser or phone should pair through. */
-export const resolveDirectPairingBaseUrl = (state: PersistedServerRuntimeState): string =>
+export const resolveDirectPairingBaseUrl = (
+  state: PersistedServerRuntimeState,
+  platform: NodeJS.Platform,
+): string =>
   state.devUrl ??
   resolveHeadlessConnectionString(state.host, state.port, {
     privateNetworkOnly: state.privateNetworkOnly,
+    platform,
   });
 
 const formatPairOutput = (input: {
@@ -162,7 +162,8 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
 ) {
   const bases: Array<string> = [];
   let inLinkedWorktree = false;
-  if (explicitBaseDir !== undefined && explicitBaseDir.trim().length > 0) {
+  const hasExplicitBaseDir = explicitBaseDir !== undefined && explicitBaseDir.trim().length > 0;
+  if (hasExplicitBaseDir) {
     bases.push(yield* resolveBaseDir(explicitBaseDir));
   } else {
     // Same precedence as dev-runner: inside a linked worktree only its own
@@ -209,7 +210,12 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
       } satisfies DiscoveredPairTarget;
     }
   }
-  return yield* new NoRunningServerError({ checkedStatePaths, inLinkedWorktree });
+  const baseDirArgs = hasExplicitBaseDir ? ["--base-dir", explicitBaseDir] : [];
+  return yield* new NoRunningServerError({
+    checkedStatePaths,
+    inLinkedWorktree,
+    serveCommand: (yield* resolveHostCliCommand("serve", baseDirArgs)).command,
+  });
 });
 
 /** Use the discovered state directory, independent of ambient config variables. */
@@ -312,23 +318,30 @@ export const pairCommand = Command.make("pair", {
       const cliLogLevel = yield* GlobalFlag.LogLevel;
       const logLevel = Option.getOrElse(cliLogLevel, () => "Warn" as const);
 
-      const target = yield* discoverPairTarget(Option.getOrUndefined(flags.baseDir));
+      const explicitBaseDir = Option.getOrUndefined(flags.baseDir);
+      const target = yield* discoverPairTarget(explicitBaseDir);
       // Each protocol keeps auth in its own database, so a token minted here
       // for another protocol's server would never be accepted by it. Refuse
       // before any local layer opens (and migrates) that database.
       const serverProtocolVersion = target.descriptor.orchestrationProtocolVersion ?? 1;
       if (serverProtocolVersion !== ORCHESTRATION_PROTOCOL_VERSION) {
+        const platform = yield* HostProcess.Platform;
+        const baseDirArgs =
+          explicitBaseDir !== undefined && explicitBaseDir.trim().length > 0
+            ? ` --base-dir ${hostShellWord(platform, explicitBaseDir)}`
+            : "";
         return yield* new IncompatibleServerProtocolError({
           serverVersion: target.descriptor.serverVersion,
           serverProtocolVersion,
+          pairCommand: `npx t3@${target.descriptor.serverVersion} pair${baseDirArgs}`,
         });
       }
 
       const notes: Array<string> = [];
-      const pairingBaseUrl = resolveDirectPairingBaseUrl(target.state);
+      const pairingBaseUrl = resolveDirectPairingBaseUrl(target.state, yield* HostProcess.Platform);
       if (isLoopbackHost(new URL(pairingBaseUrl).hostname)) {
         notes.push(
-          "This URL is only reachable from this machine. Restart the server with a reachable --host.",
+          "This URL is only reachable from this machine. To reach it from your other devices, run `t3 up`.",
         );
       } else if (target.state.privateNetworkOnly) {
         notes.push("This URL works only from this machine's local network.");

@@ -1,11 +1,11 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as Socket from "effect/socket/Socket";
 
 import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
 
 import { cryptoLayer } from "./cryptoLayer";
+import * as NativeWebSocket from "../native/nativeWebSocket";
 import * as Persistence from "../persistence/layer";
 import { disposeOnFoundationReplace, type FoundationHotModule } from "./foundation-fast-refresh";
 import { whenProtectedDataAvailable } from "./protectedData";
@@ -15,12 +15,12 @@ declare const module: { readonly hot?: FoundationHotModule } | undefined;
 const layerHttpClient = layerRemoteHttpClient(fetch);
 
 type RuntimeLayerSource =
-  | typeof Socket.layerWebSocketConstructorGlobal
+  | typeof NativeWebSocket.layer
   | typeof cryptoLayer
   | typeof layerHttpClient
   | typeof Persistence.layer;
 
-const layerRuntime = Socket.layerWebSocketConstructorGlobal.pipe(
+const layerRuntime = NativeWebSocket.layer.pipe(
   Layer.provideMerge(cryptoLayer),
   Layer.provideMerge(layerHttpClient),
   Layer.provideMerge(Persistence.layer),

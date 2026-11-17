@@ -1,12 +1,3 @@
-/**
- * DirectEndpoints - the LAN and tailnet addresses this server listens on now.
- *
- * Clients connected one way save these as extra routes so
- * they can move to a faster path when one is reachable, and replace a saved
- * LAN address when DHCP or a new Wi-Fi network changes it. Only addresses the
- * server is actually bound to are listed: a loopback-only server lists none,
- * because its loopback address means a different machine to every client.
- */
 import type { ServerDirectEndpoint } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -15,16 +6,14 @@ import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isTailnetHost } from "@t3tools/shared/hostClassification";
-
-import * as ServerConfig from "../config.ts";
 import {
   formatHostForUrl,
-  isLoopbackHost,
-  isPrivateNetworkAddress,
+  isTailnetHost,
   isWildcardHost,
-  VIRTUAL_INTERFACE,
-} from "../startupAccess.ts";
+} from "@t3tools/shared/hostClassification";
+
+import * as ServerConfig from "../config.ts";
+import { isLoopbackHost, isPrivateNetworkAddress, isVirtualInterface } from "../startupAccess.ts";
 
 type NetworkInterfacesMap = ReturnType<typeof NodeOS.networkInterfaces>;
 
@@ -36,6 +25,7 @@ export class DirectEndpoints extends Context.Service<
 >()("t3/environment/DirectEndpoints") {}
 
 // Credentials travel over HTTP; public IPs leak them and hostnames can resolve differently per client.
+// Wildcard binds stay IPv4: the private-network listener check accepts only IPv4 peers.
 const isAdvertisableAddress = (address: string): boolean =>
   NodeNet.isIPv4(address) && !address.startsWith("127.") && isPrivateNetworkAddress(address);
 
@@ -66,7 +56,9 @@ export function resolveBoundEndpoints(input: {
   );
   const addresses = isWildcardHost(input.host)
     ? Object.entries(input.interfaces)
-        .flatMap(([name, entries]) => (VIRTUAL_INTERFACE.test(name) ? [] : (entries ?? [])))
+        .flatMap(([name, entries]) =>
+          isVirtualInterface(name, input.platform) ? [] : (entries ?? []),
+        )
         .filter(
           (entry) =>
             !entry.internal &&
@@ -75,7 +67,10 @@ export function resolveBoundEndpoints(input: {
             !(input.platform === "win32" && WINDOWS_HOST_ADAPTER_MAC.test(entry.mac)),
         )
         .map((entry) => entry.address)
-    : [input.host!].filter(isAdvertisableAddress);
+    : [input.host!].filter(
+        (address) =>
+          isAdvertisableAddress(address) || (NodeNet.isIPv6(address) && isTailnetHost(address)),
+      );
   return [...new Set(addresses)]
     .filter((address) => !input.onCloudVm || tailscaleAddresses.has(address))
     .map((address) => ({

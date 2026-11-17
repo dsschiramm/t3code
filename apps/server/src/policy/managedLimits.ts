@@ -1,0 +1,103 @@
+/**
+ * managedLimits - what `limits.clients` in the managed policy allows, and the
+ * one error every refusal uses so each transport can show the administrator's organization.
+ *
+ * @module managedLimits
+ */
+import type {
+  ManagedPolicyClient,
+  ManagedPolicyDocument,
+  ServerAuthPolicy,
+} from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+
+import { loopbackBindAddress } from "../auth/utils.ts";
+
+type PolicyDocument = { readonly document: ManagedPolicyDocument | undefined };
+
+export class ManagedPolicyRefusedError extends Schema.TaggedError<ManagedPolicyRefusedError>()(
+  "ManagedPolicyRefusedError",
+  {
+    organization: Schema.String,
+    /** What the policy does not allow, for example "remote clients". */
+    action: Schema.String,
+    /** What that means for this request, for example "so the server cannot listen on 0.0.0.0". */
+    detail: Schema.optionalKey(Schema.String),
+  },
+) {
+  override get message(): string {
+    return `${this.organization}'s policy does not allow ${this.action}${
+      this.detail === undefined ? "" : `, ${this.detail}`
+    }.`;
+  }
+}
+
+const CLIENT_AUTH_POLICY: Record<ManagedPolicyClient, ServerAuthPolicy> = {
+  desktop: "desktop-managed-local",
+  "local-browser": "loopback-browser",
+  remote: "remote-reachable",
+};
+
+const AUTH_POLICY_ACTION: Record<ServerAuthPolicy, string> = {
+  "desktop-managed-local": "the desktop app",
+  "loopback-browser": "browsers on this machine",
+  "remote-reachable": "remote clients",
+  "unsafe-no-auth": "running without authentication",
+};
+
+/** Whether the server may run with `authPolicy`. Any policy file rules out `unsafe-no-auth`. */
+export function allowsAuthPolicy(policy: PolicyDocument, authPolicy: ServerAuthPolicy): boolean {
+  if (policy.document === undefined) return true;
+  if (authPolicy === "unsafe-no-auth") return false;
+  const clients = policy.document.limits?.clients;
+  return (
+    clients === undefined || clients.some((client) => CLIENT_AUTH_POLICY[client] === authPolicy)
+  );
+}
+
+/** Whether anything off this machine may pair, by LAN or a minted link. */
+export const allowsRemoteClients = (policy: PolicyDocument) =>
+  allowsAuthPolicy(policy, "remote-reachable");
+
+const refuse = (policy: PolicyDocument, action: string, detail?: string) =>
+  new ManagedPolicyRefusedError({
+    organization: policy.document?.organization ?? "Your organization",
+    action,
+    ...(detail === undefined ? {} : { detail }),
+  });
+
+export const refuseRemoteClients = (policy: PolicyDocument, detail?: string) =>
+  refuse(policy, AUTH_POLICY_ACTION["remote-reachable"], detail);
+
+/**
+ * Fails when the server would accept clients the policy leaves out; otherwise returns the address
+ * to bind. Runs before the server binds, so a refused configuration never listens, not even
+ * briefly. Without `remote` that address is the loopback literal the check approved, never a name.
+ */
+export const checkServerReachability = Effect.fn("managedLimits.checkServerReachability")(
+  function* (
+    policy: PolicyDocument,
+    input: {
+      readonly authPolicy: ServerAuthPolicy;
+      readonly host: string | undefined;
+      /** The background service chose `host` to reach private networks; the user did not. */
+      readonly privateNetworkOnly?: boolean | undefined;
+    },
+  ) {
+    const cannotListen = () =>
+      refuseRemoteClients(
+        policy,
+        input.privateNetworkOnly === true
+          ? "so the background service cannot listen on private networks; set T3CODE_HOST=127.0.0.1 in its service.env"
+          : `so the server cannot listen on ${input.host === "" ? "every interface" : (input.host ?? "this host")}`,
+      );
+    if (!allowsAuthPolicy(policy, input.authPolicy)) {
+      return yield* input.authPolicy === "remote-reachable"
+        ? cannotListen()
+        : refuse(policy, AUTH_POLICY_ACTION[input.authPolicy]);
+    }
+    if (allowsRemoteClients(policy)) return input.host ?? "127.0.0.1";
+    return loopbackBindAddress(input.host) ?? (yield* cannotListen());
+  },
+);

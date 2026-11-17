@@ -2,7 +2,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 
 import { environmentCatalog } from "../../connection/catalog";
 import {
-  connectPairingUrlAtom,
+  connectPairingUrl as connectPairingUrlAtom,
   updateBearerConnection,
 } from "../../connection/onboarding";
 import { useWorkspaceEnvironments } from "../../state/workspace";
@@ -15,7 +15,6 @@ export function useConnectionController() {
   });
   const updateBearer = useAtomCommand(updateBearerConnection, { reportFailure: false });
   const removeEnvironmentMutation = useAtomCommand(environmentCatalog.remove, "environment remove");
-  const retryEnvironmentMutation = useAtomCommand(environmentCatalog.retryNow, "environment retry");
   const setEnvironmentEnabledMutation = useAtomCommand(
     environmentCatalog.setEnabled,
     "environment toggle",
@@ -28,8 +27,6 @@ export function useConnectionController() {
     });
   const removeEnvironment = (environmentId: EnvironmentId) =>
     removeEnvironmentMutation(environmentId);
-  const retryEnvironment = (environmentId: EnvironmentId) =>
-    retryEnvironmentMutation(environmentId);
   const setEnvironmentEnabled = (environmentId: EnvironmentId, enabled: boolean) =>
     setEnvironmentEnabledMutation({ environmentId, enabled });
   const updateEnvironment = (
@@ -46,7 +43,6 @@ export function useConnectionController() {
     connectedEnvironments,
     connectPairingUrl,
     removeEnvironment,
-    retryEnvironment,
     setEnvironmentEnabled,
     updateEnvironment,
   };
